@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Start Game</title>
+    <link rel="stylesheet" href="Start Game.css">
+</head>
+<body>
+    <a href="../mainpage.html" class="back-link">&larr; Main Menu</a>
+
+    <div class="scene">
+        <!-- Z-order: background -> middleground -> monster (random) -> foreground -->
+        <img src="images/background_forest.jpg"    alt="background"   class="layer layer-background">
+        <img src="images/middleground_shadow.png"  alt="middleground" class="layer layer-middleground">
+
+        <!-- Random monster — src is set by JS at page load -->
+        <img alt="monster" id="monster" class="layer layer-monster">
+
+        <!-- Decision timer — fills red over 3s while the choice modal is open.
+             If it fills before the player picks, the monster acts on its own. -->
+        <div class="turn-timer" id="turn-timer" aria-hidden="true">
+            <div class="turn-timer-fill" id="turn-timer-fill"></div>
+        </div>
+
+        <!-- Small box above the monster (e.g., for a name plate / HP) -->
+        <div class="monster-box" id="monster-box"></div>
+
+        <img src="images/foreground_forest.png"    alt="foreground"   class="layer layer-foreground">
+
+        <!-- Playing field — monster's revealed cards appear here as the game progresses -->
+        <div class="monster-field" id="monster-field"></div>
+
+        <!-- Player hand — sits above everything in the scene -->
+        <div class="hand" id="hand"></div>
+
+        <!-- Floating status popup (e.g. "Monster has no circle cards"). -->
+        <div class="game-popup" id="game-popup" role="status" aria-live="polite">
+            <p class="popup-text" id="popup-text"></p>
+            <button class="popup-ok" id="popup-ok" type="button" hidden>OK</button>
+        </div>
+
+        <!-- Game-start "choose your 2 challenge cards" modal. -->
+        <div class="setup-modal" id="setup-modal" aria-hidden="true">
+            <div class="setup-content">
+                <h2 class="setup-title">Choose Your Challenge Cards</h2>
+                <p class="setup-intro">Pick <strong>2 cards</strong> from your hand to place on the playing field. The monster will do the same.</p>
+                <div class="setup-rules">
+                    <p><strong>Suit power:</strong> Square beats Circle and Triangle. Circle beats Triangle. Triangle only beats Triangle.</p>
+                    <p><strong>Number:</strong> Within the same suit, the card with the higher number wins.</p>
+                    <p><strong>Strategy:</strong> Place cards high enough that the monster can take them — but low enough that you can take them back.</p>
+                    <p><strong>+ cards:</strong> Triangles marked with a "+" take an extra higher-suit card from the field after a successful attack.</p>
+                </div>
+                <p class="setup-counter">Selected: <span id="setup-count">0</span> / 2</p>
+                <button class="setup-confirm" id="setup-confirm" type="button" disabled>Confirm</button>
+            </div>
+        </div>
+
+        <!-- "End Battle" button — shown only while a play-card battle is active. -->
+        <button class="end-battle-btn" id="end-battle-btn" type="button">End Battle</button>
+
+        <!-- Bonus action button — appears on the left side of the screen
+             whenever the monster has cards but no suit overlap with the
+             player's hand (i.e. neither side can attack the other via
+             the normal rules). Click to enter a new battle mode (TBD). -->
+        <button class="bonus-action-btn" id="bonus-action-btn" type="button" aria-hidden="true">
+            <span class="bonus-action-label">Bonus<br>Action</span>
+        </button>
+
+        <!-- Choice modal: appears when a hand card is clicked. The player picks
+             between placing the card on the field (PlayCard.js) or gambling
+             with the high/low wheel (Actions.js). -->
+        <div class="play-choice-modal" id="play-choice-modal" aria-hidden="true">
+            <div class="choice-content">
+                <p class="choice-title">What do you want to do?</p>
+                <div class="choice-buttons">
+                    <button class="choice-btn choice-play"   id="choice-play"   type="button">Play Card</button>
+                    <button class="choice-btn choice-gamble" id="choice-gamble" type="button">Gamble</button>
+                </div>
+                <button class="choice-cancel" id="choice-cancel" type="button">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Prediction wheel — rolls in from the right one second after page load.
+             The right half of the wheel sits off-screen on purpose; only the
+             left half is visible. The two arrow buttons appear over the visible
+             half after the player clicks a card. -->
+        <div class="prediction-wheel" id="prediction-wheel" aria-hidden="true">
+            <div class="wheel-disc" id="wheel-disc"></div>
+            <div class="wheel-arrows" id="wheel-arrows">
+                <button class="wheel-arrow wheel-arrow-up"   data-call="high" type="button" title="High Call">▲</button>
+                <button class="wheel-arrow wheel-arrow-down" data-call="low"  type="button" title="Low Call">▼</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="Start Game.js"></script>
+    <!-- Game actions — safe to delete this <script> tag (and the file)
+         if it ever breaks; the scene above will keep working. -->
+    <script src="Start Game Actions.js"></script>
+    <!-- Play-card flow (target selection + suit hierarchy). Also safe to
+         delete; without it the Play Card button just does nothing. -->
+    <script src="Start Game PlayCard.js"></script>
+    <!-- Initial setup: "pick 2 challenge cards" modal at game start. Safe
+         to delete — without it the game just starts with empty field. -->
+    <script src="Start Game Setup.js"></script>
+    <!-- 3-second decision timer above the monster box. If the player
+         doesn't pick Play Card or Gamble in time, the monster acts on
+         its own. Safe to delete — disables the auto-action feature. -->
+    <script src="Start Game TurnTimer.js"></script>
+    <!-- Bonus action: large left-side button shown when the player's
+         and monster's suits don't overlap (stalemate breaker). Safe
+         to delete — without it the button never appears. -->
+    <script src="Start Game BonusAction.js"></script>
+</body>
+</html>

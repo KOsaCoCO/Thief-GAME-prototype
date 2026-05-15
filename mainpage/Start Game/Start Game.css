@@ -1,0 +1,824 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+    background-color: #000;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Scene container — fills the viewport and stacks all layers. */
+.scene {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Shared layer rules — every layer is absolutely positioned,
+   fills the scene, and is centered so artwork is never cropped to one side. */
+.layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+/* Z-index order: background -> middleground -> monster -> foreground. */
+.layer-background   { z-index: 1; }
+.layer-middleground { z-index: 2; }
+.layer-monster      { z-index: 3; }
+.layer-foreground   { z-index: 4; }
+
+/* Decision timer — a slim bar that sits 8px above the monster-box.
+   While the choice modal is open the fill animates left-to-right over
+   3 seconds. If it completes before the player picks, the monster acts
+   on its own. The bar is fully transparent while idle. */
+.turn-timer {
+    position: absolute;
+    left: 50%;
+    bottom: calc(63vh + 188px);     /* monster-box top (~178px) + 10px gap */
+    transform: translateX(-50%);
+    width: 180px;
+    height: 8px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 2px solid #2c3e50;
+    border-radius: 4px;
+    overflow: hidden;
+    z-index: 5;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.turn-timer.visible {
+    opacity: 1;
+}
+
+.turn-timer-fill {
+    width: 0%;
+    height: 100%;
+    background-color: #c0392b;
+}
+
+.turn-timer.running .turn-timer-fill {
+    animation: timerFill 3s linear forwards;
+}
+
+@keyframes timerFill {
+    from { width: 0%;   }
+    to   { width: 100%; }
+}
+
+/* Small UI box positioned just above the monster sprite.
+   Holds 6 buff slots that start as "?" and get uncovered later
+   when certain cards are played. */
+.monster-box {
+    position: absolute;
+    left: 50%;
+    bottom: calc(63vh + 130px);
+    transform: translateX(-50%);
+    height: 48px;
+    padding: 0 10px;
+    background-color: #ffffff;
+    border: 2px solid #2c3e50;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.monster-box .slot {
+    position: relative;          /* so .special ::before anchors here */
+    width: 26px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1rem;
+    color: #2c3e50;
+    background-color: #f4f4f4;
+    border: 1px solid #2c3e50;
+    border-radius: 4px;
+    transition: background-color 0.25s ease, color 0.25s ease, transform 0.2s ease;
+}
+
+/* When a slot has been uncovered, swap its look so it's visibly "revealed". */
+.monster-box .slot.revealed {
+    background-color: #2c3e50;
+    color: #ffffff;
+    font-size: 1.15rem;
+    line-height: 1;
+}
+
+/* Brief "jump" animation that plays just before the monster plays
+   the revealed card (i.e. before the slot disappears and the card
+   lands on the playing field). */
+@keyframes slotJump {
+    0%, 100% { transform: translateY(0);    }
+    20%      { transform: translateY(-12px); }
+    40%      { transform: translateY(0);    }
+    60%      { transform: translateY(-7px);  }
+    80%      { transform: translateY(0);    }
+}
+
+.monster-box .slot.jumping {
+    animation: slotJump 0.6s ease;
+    background-color: #f4d35e;   /* attention-grabbing highlight */
+    color: #2c3e50;
+}
+
+/* Entrance animation for a brand-new slot (when the monster
+   wins a card off the player and the box expands). */
+@keyframes slotAppear {
+    from { transform: scale(0);   opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+}
+
+.monster-box .slot.new-slot {
+    animation: slotAppear 0.3s ease;
+}
+
+/* The box has no fixed width, so it auto-grows as slots are added
+   and auto-shrinks as the monster plays them. Smooth transitions
+   on its visible properties keep the expansion from feeling abrupt. */
+.monster-box {
+    transition: padding 0.25s ease, background-color 0.25s ease;
+}
+
+/* -------- Player card "lost" animation --------
+   Plays when a clicked card has no suit match in the monster's
+   hand — the card falls and fades, then is removed from the DOM. */
+@keyframes cardLose {
+    to {
+        opacity: 0;
+        transform: translateY(60px) scale(0.55) rotate(-6deg);
+    }
+}
+
+.hand .card.losing {
+    animation: cardLose 0.35s ease forwards;
+    pointer-events: none;
+}
+
+/* Monster overrides the shared .layer rules:
+   - It's a character sprite, NOT a full-screen layer.
+   - Centered horizontally, anchored toward the bottom of the scene
+     so it sits "in" the middleground, not floating in the sky.
+   - object-fit: contain keeps the whole sprite visible. */
+.layer-monster {
+    width: auto;
+    height: 45vh;
+    inset: auto;                /* clear the top:0; right:0; bottom:0; left:0 */
+    left: 50%;
+    bottom: calc(18vh + 190px);
+    transform: translateX(-50%);
+    object-fit: contain;
+    object-position: center bottom;
+}
+
+/* -------- Monster playing field (revealed opponent cards) --------
+
+   Centered in the middle of the screen, visually ABOVE the player's hand.
+   Cards are 10px smaller than hand cards. */
+.monster-field {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5vw;
+    z-index: 6;
+    pointer-events: none;        /* purely visual — don't intercept clicks */
+}
+
+.monster-field .card {
+    position: relative;
+    height: calc(20vh - 10px);   /* 10px smaller than hand cards */
+    aspect-ratio: 2 / 3;
+    background-color: #ffffff;
+    border: 2px solid #2c3e50;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #2c3e50;
+    overflow: hidden;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+    animation: cardReveal 0.35s ease;
+    /* The .monster-field parent has pointer-events:none so it never
+       blocks clicks on the hand below. Re-enable pointer events on
+       each card so the play-card battle can receive target clicks. */
+    pointer-events: auto;
+}
+
+.monster-field .card .card-number {
+    font-size: 1.5rem;
+}
+
+@keyframes cardReveal {
+    from { opacity: 0; transform: scale(0.4); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+/* -------- Player hand (cards) -------- */
+
+/* The hand row sits above the foreground (z-index > 3),
+   anchored to the bottom with horizontal + bottom padding. */
+.hand {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 4vh;             /* padding from bottom edge */
+    z-index: 10;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 1.5vw;
+    padding: 0 3vw;          /* padding from side edges */
+}
+
+/* Each card — 20% of viewport height, portrait 2:3 aspect. */
+.hand .card {
+    position: relative;
+    height: 20vh;
+    aspect-ratio: 2 / 3;
+    background-color: #ffffff;
+    border: 2px solid #2c3e50;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #2c3e50;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.hand .card:hover {
+    transform: translateY(-12px) scale(1.05);
+    box-shadow: 0 14px 22px rgba(0, 0, 0, 0.65);
+}
+
+/* "+" indicator drawn on the top-right of every special-triangle card,
+   wherever it appears (hand, field, revealed slot in monster's box). */
+.card.special::before,
+.monster-box .slot.special::before {
+    content: "+";
+    position: absolute;
+    top: 2px;
+    right: 5px;
+    font-size: 1.05em;
+    line-height: 1;
+    font-weight: bold;
+    color: #f1c40f;                /* gold */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    z-index: 3;
+    pointer-events: none;
+}
+
+/* Smaller offsets inside the tiny box slot. */
+.monster-box .slot.special::before {
+    top: 0;
+    right: 2px;
+    font-size: 0.85rem;
+}
+
+/* Bonus-pick targets: a gold pulse to distinguish them from the regular
+   yellow targetable pulse used for the normal attack pick. */
+.monster-field .card.bonus-target {
+    cursor: pointer;
+    animation: bonusPulse 1s ease-in-out infinite;
+}
+
+.monster-field .card.bonus-target:hover {
+    transform: scale(1.07);
+    box-shadow: 0 0 24px rgba(241, 196, 15, 1), 0 6px 16px rgba(0, 0, 0, 0.55);
+    animation: none;
+}
+
+@keyframes bonusPulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(241, 196, 15, 0.55), 0 6px 16px rgba(0, 0, 0, 0.55); }
+    50%      { box-shadow: 0 0 22px rgba(241, 196, 15, 1),    0 6px 16px rgba(0, 0, 0, 0.55); }
+}
+
+/* SVG shape — outlined, centered, follows the card text color. */
+.card-shape {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 75%;
+    height: 75%;
+    transform: translate(-50%, -50%);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 6;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+/* Triangles — same scaling rules as in the Card Info gallery. */
+.shape-triangle .card-shape {
+    width: 100%;
+    height: 100%;
+    transform: translate(-50%, calc(-50% - 4px));
+}
+
+.card-number {
+    position: relative;
+    z-index: 2;
+    font-weight: bold;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+/* -------- Game-start setup modal --------
+   A floating panel at the top of the screen that explains the rules
+   and prompts the player to pick 2 cards from their hand. The hand
+   stays clickable underneath. */
+.setup-modal {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translate(-50%, -8px);
+    width: min(560px, 90vw);
+    padding: 22px 30px 18px;
+    background-color: #ffffff;
+    border: 3px solid #2c3e50;
+    border-radius: 12px;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55);
+    color: #2c3e50;
+    font-family: inherit;
+    text-align: center;
+    z-index: 170;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.setup-modal.visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    pointer-events: auto;
+}
+
+.setup-title {
+    font-size: 1.3rem;
+    margin: 0 0 10px;
+}
+
+.setup-intro {
+    margin: 0 0 12px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.setup-rules {
+    background-color: #f4f4f4;
+    border: 1px solid #2c3e50;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    text-align: left;
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.setup-rules p {
+    margin: 4px 0;
+}
+
+.setup-counter {
+    font-weight: bold;
+    margin: 0 0 10px;
+    font-size: 1rem;
+}
+
+.setup-confirm {
+    padding: 10px 24px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: 1rem;
+    color: #ffffff;
+    background-color: #2c3e50;
+    border: 2px solid #2c3e50;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+}
+
+.setup-confirm:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.setup-confirm:not(:disabled):hover {
+    background-color: #1c2a36;
+}
+
+.setup-confirm:not(:disabled):active {
+    transform: scale(0.97);
+}
+
+/* Hand cards marked for the initial challenge — visible "you picked these" highlight. */
+.hand .card.setup-selected {
+    transform: translateY(-22px) scale(1.07);
+    box-shadow: 0 0 22px rgba(46, 204, 113, 0.95), 0 8px 18px rgba(0, 0, 0, 0.55);
+    border-color: #27ae60;
+}
+
+/* -------- "Play Card or Gamble" choice modal -------- */
+.play-choice-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 180;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.play-choice-modal.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.choice-content {
+    background-color: #ffffff;
+    border: 3px solid #2c3e50;
+    border-radius: 12px;
+    padding: 26px 34px 18px;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.6);
+    text-align: center;
+    transform: scale(0.85);
+    transition: transform 0.25s cubic-bezier(0.2, 1, 0.3, 1.4);
+    color: #2c3e50;
+    font-family: inherit;
+}
+
+.play-choice-modal.visible .choice-content {
+    transform: scale(1);
+}
+
+.choice-title {
+    font-weight: bold;
+    font-size: 1.15rem;
+    margin: 0 0 18px;
+}
+
+.choice-buttons {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 8px;
+}
+
+.choice-btn {
+    padding: 12px 22px;
+    font-size: 1rem;
+    font-weight: bold;
+    font-family: inherit;
+    color: #2c3e50;
+    background-color: #ffffff;
+    border: 2px solid #2c3e50;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+    min-width: 130px;
+}
+
+.choice-btn:hover {
+    background-color: #2c3e50;
+    color: #ffffff;
+}
+
+.choice-btn:active {
+    transform: scale(0.97);
+}
+
+.choice-cancel {
+    padding: 6px 14px;
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: #7a8694;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.choice-cancel:hover {
+    color: #2c3e50;
+    text-decoration: underline;
+}
+
+/* -------- Play-card targeting mode -------- */
+
+/* Selected hand card while picking a target — lifts up and glows. */
+.hand .card.selected-for-play {
+    transform: translateY(-18px) scale(1.05);
+    box-shadow: 0 0 22px rgba(244, 211, 94, 0.9), 0 8px 18px rgba(0, 0, 0, 0.55);
+    z-index: 11;
+}
+
+/* Card chosen for a Gamble — juts out with a red-tinted glow so the
+   player can see exactly which card is at stake on the wheel. */
+.hand .card.gamble-selected {
+    transform: translateY(-22px) scale(1.05);
+    box-shadow: 0 0 22px rgba(192, 57, 43, 0.9), 0 8px 18px rgba(0, 0, 0, 0.55);
+    z-index: 11;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* "Spent" cards during a Play Card battle — greyed out and unclickable
+   until the battle ends. Applies to both player hand cards and the
+   matching slot in the monster's box. */
+.hand .card.used,
+.monster-box .slot.used {
+    filter: grayscale(1);
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.hand .card.used:hover {
+    transform: none;                /* defeat the default hover lift */
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+}
+
+/* Playing-field cards: subtle border tint by owner so the player can tell
+   their own placed cards from the monster's. */
+.monster-field .card[data-owner="monster"] {
+    border-color: #c0392b;          /* red-ish */
+}
+.monster-field .card[data-owner="player"] {
+    border-color: #2980b9;          /* blue-ish */
+}
+
+/* Targeting highlight on a field card during a play-card battle. */
+.monster-field .card.targetable {
+    cursor: pointer;
+    animation: targetPulse 1.2s ease-in-out infinite;
+}
+
+.monster-field .card.targetable:hover {
+    transform: scale(1.07);
+    box-shadow: 0 0 22px rgba(244, 211, 94, 1), 0 6px 16px rgba(0, 0, 0, 0.55);
+    animation: none;
+}
+
+@keyframes targetPulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(244, 211, 94, 0.5),  0 6px 16px rgba(0, 0, 0, 0.55); }
+    50%      { box-shadow: 0 0 18px rgba(244, 211, 94, 0.95), 0 6px 16px rgba(0, 0, 0, 0.55); }
+}
+
+/* "End Battle" button — only visible during a play-card battle.
+   Sits in the upper-right so it doesn't clash with the menu/back button. */
+.end-battle-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 10px 18px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: 0.95rem;
+    color: #ffffff;
+    background-color: #c0392b;
+    border: 2px solid #2c3e50;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-10px);
+    transition: opacity 0.25s ease, transform 0.25s ease, background-color 0.15s ease;
+    z-index: 150;
+}
+
+.end-battle-btn.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.end-battle-btn:hover {
+    background-color: #962d22;
+}
+
+.end-battle-btn:active {
+    transform: scale(0.97);
+}
+
+/* Entrance animation for cards joining the player's hand after a successful play. */
+@keyframes handCardArrive {
+    from { opacity: 0; transform: translateY(-30px) scale(0.7); }
+    to   { opacity: 1; transform: translateY(0)     scale(1);   }
+}
+
+.hand .card.arriving {
+    animation: handCardArrive 0.4s ease;
+}
+
+/* -------- Status popup --------
+   Centered on screen, fades in / scales up when shown, auto-hides after a
+   couple of seconds. Used for situations the game can't resolve normally
+   (no same-suit monster card, monster hand empty, etc.). */
+.game-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.85);
+    min-width: 260px;
+    max-width: 80vw;
+    padding: 18px 28px;
+    background-color: #ffffff;
+    border: 3px solid #2c3e50;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease,
+                transform 0.25s cubic-bezier(0.2, 1, 0.3, 1.4);
+    color: #2c3e50;
+    font-size: 1.05rem;
+    font-weight: bold;
+    text-align: center;
+}
+
+.game-popup.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.popup-text {
+    margin: 0;
+    line-height: 1.4;
+    white-space: pre-line;   /* render \n in message text as real line breaks */
+}
+
+/* OK button shown only when a popup is opened with { needsOk: true }.
+   The parent .game-popup has pointer-events:none (so it doesn't block
+   the scene), so we must re-enable pointer events on the button itself. */
+.popup-ok {
+    margin-top: 14px;
+    padding: 8px 22px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: 0.95rem;
+    color: #ffffff;
+    background-color: #2c3e50;
+    border: 2px solid #2c3e50;
+    border-radius: 6px;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.popup-ok:hover  { background-color: #1c2a36; }
+.popup-ok:active { transform: scale(0.97); }
+
+/* -------- Prediction wheel --------
+   Positioned at the right edge of the scene. With right: -15vh the wheel's
+   horizontal center sits exactly on the screen's right edge, so the left
+   half is visible and the right half spills off-screen by design.
+   Starts fully off-screen and rolls in 1s after page load. */
+.prediction-wheel {
+    position: absolute;
+    top: 50%;
+    right: -15vh;
+    width: 30vh;
+    height: 30vh;
+    transform: translate(100%, -50%);     /* start fully off-screen */
+    z-index: 50;
+    transition: transform 1.4s cubic-bezier(0.18, 1, 0.3, 1);
+    pointer-events: none;                 /* enabled when arrows are shown */
+}
+
+.prediction-wheel.visible {
+    transform: translate(0, -50%);        /* rolled in: half on, half off */
+    pointer-events: auto;
+}
+
+.wheel-disc {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    /* Vertical split: left half green, right half red (at 0° rotation).
+       Spinning the disc rotates these halves around its center. */
+    background: linear-gradient(to right,
+        #4caf50 0%, #4caf50 50%,
+        #e74c3c 50%, #e74c3c 100%);
+    border: 4px solid #2c3e50;
+    box-shadow: -8px 0 22px rgba(0, 0, 0, 0.55);
+}
+
+/* Rotation during roll-in to fake a "rolling" feel */
+.prediction-wheel.rolling-in .wheel-disc {
+    animation: wheelRollIn 1.4s cubic-bezier(0.18, 1, 0.3, 1) forwards;
+}
+
+/* Slow continuous idle spin once the wheel has arrived */
+.prediction-wheel.idle-spinning .wheel-disc {
+    animation: wheelSpin 8s linear infinite;
+}
+
+@keyframes wheelRollIn {
+    from { transform: rotate(-540deg); }
+    to   { transform: rotate(0deg);    }
+}
+
+@keyframes wheelSpin {
+    from { transform: rotate(0deg);    }
+    to   { transform: rotate(360deg);  }
+}
+
+/* Up / Down arrow buttons — appear over the visible half of the wheel.
+   left: 25% centers them on the visible (left) half of the disc. */
+.wheel-arrows {
+    position: absolute;
+    top: 50%;
+    left: 25%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 2;
+}
+
+.wheel-arrows.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.wheel-arrow {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: #2c3e50;
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 2px solid #2c3e50;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+    font-family: inherit;
+}
+
+.wheel-arrow:hover {
+    background-color: #2c3e50;
+    color: #ffffff;
+}
+
+.wheel-arrow:active {
+    transform: scale(0.95);
+}
+
+/* -------- Back to Main Menu -------- */
+.back-link {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    padding: 10px 18px;
+    font-weight: bold;
+    color: #2c3e50;
+    background-color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    border: 2px solid #2c3e50;
+    border-radius: 6px;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+    z-index: 1000;
+}
+
+.back-link:hover {
+    background-color: #2c3e50;
+    color: #fff;
+}
+
+.back-link:active {
+    transform: scale(0.97);
+}

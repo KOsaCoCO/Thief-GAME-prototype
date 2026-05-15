@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Info</title>
+    <link rel="stylesheet" href="Card Info.css">
+</head>
+<body>
+    <a href="../mainpage.html" class="back-link">&larr; Main Menu</a>
+
+    <div class="page">
+        <section class="top-band"></section>
+
+        <section class="middle-band">
+            <div class="gallery" id="gallery">
+                <!-- 36 card cells injected by JS -->
+            </div>
+        </section>
+
+        <section class="bottom-band"></section>
+    </div>
+
+    <!-- Card detail overlay (hidden by default) -->
+    <div class="detail-view" id="detail-view" aria-hidden="true">
+        <button class="return-btn" id="return-btn" type="button">&larr; Back to Gallery</button>
+
+        <div class="detail-content">
+            <div class="detail-text" id="detail-text">
+                <p>Card information will appear here.</p>
+            </div>
+
+            <div class="detail-card-wrapper">
+                <div class="card detail-card" id="detail-card"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="Card Info.js"></script>
+</body>
+</html>
