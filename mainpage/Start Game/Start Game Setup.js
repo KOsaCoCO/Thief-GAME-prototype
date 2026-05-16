@@ -150,6 +150,10 @@
                         needsOk: true,
                         onOk: () => {
                             if (window.GameTurnTimer) window.GameTurnTimer.start();
+                            if (window.GameBonusAction
+                                && typeof GameBonusAction.update === "function") {
+                                GameBonusAction.update();
+                            }
                         },
                     }
                 );

@@ -120,8 +120,27 @@
         // (idempotently) and don't bother with an action.
         if (checkMonsterDefeat()) return;
 
-        // Monster decides: PLAY CARD (50%) or GAMBLE (50%)
-        const wantsPlay = Math.random() < 0.5;
+        // Build the list of available auto-actions.
+        // Bonus action is an additional option ONLY in case-2 (disjoint
+        // suits, both sides have hand cards). Case-1 is auto-fired
+        // immediately by BonusAction itself, not by the timer.
+        const options = ["gamble", "play"];
+        if (window.GameBonusAction
+            && typeof GameBonusAction.case2Available === "function"
+            && GameBonusAction.case2Available()) {
+            options.push("bonus");
+        }
+
+        const choice = options[Math.floor(Math.random() * options.length)];
+
+        if (choice === "bonus") {
+            // Hand off to BonusAction, which manages its own popup.
+            GameBonusAction.enterMonster();
+            return;     // skip the post-action timer restart for now —
+                        // BonusAction's popup OK callback handles cleanup
+        }
+
+        const wantsPlay = (choice === "play");
         if (!(wantsPlay && tryMonsterPlayCard())) {
             monsterGamble();
         }
@@ -131,6 +150,9 @@
         setTimeout(() => {
             if (window.GameActions && typeof GameActions.releaseLock === "function") {
                 GameActions.releaseLock();
+            }
+            if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+                GameBonusAction.update();
             }
             if (!checkMonsterDefeat()) start();
         }, 1400);

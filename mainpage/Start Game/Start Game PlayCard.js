@@ -312,6 +312,10 @@
         // be armed again until endBattle clears the flag. Also unarm it.
         playerHandEl.classList.add("used");
 
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
+
         console.log(
             `[playcard] Player ${playerShape} ${playerCardId} took ${targetShape} ${targetCardId} (${targetOwner})`
         );
@@ -466,6 +470,10 @@
         // the player's field card leaves the field and joins the monster's hand.
         playerEl.remove();
         GameActions.addToMonsterHand(playerCardId);
+
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
 
         // Special-triangle bonus for the monster: if the attacker is a
         // special triangle, the monster auto-takes one higher-suit

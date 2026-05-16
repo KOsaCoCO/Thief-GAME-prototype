@@ -67,6 +67,10 @@
             <span class="bonus-action-label">Bonus<br>Action</span>
         </button>
 
+        <!-- Cinematic letterbox bars, slide in when bonus battle mode is active. -->
+        <div class="letterbox letterbox-top" aria-hidden="true"></div>
+        <div class="letterbox letterbox-bottom" aria-hidden="true"></div>
+
         <!-- Choice modal: appears when a hand card is clicked. The player picks
              between placing the card on the field (PlayCard.js) or gambling
              with the high/low wheel (Actions.js). -->
@@ -91,7 +95,15 @@
                 <button class="wheel-arrow wheel-arrow-up"   data-call="high" type="button" title="High Call">▲</button>
                 <button class="wheel-arrow wheel-arrow-down" data-call="low"  type="button" title="Low Call">▼</button>
             </div>
+            <!-- Suit-of-the-moment, only visible during a bonus snatch phase. -->
+            <span class="bonus-snatch-suit" id="bonus-snatch-suit" aria-hidden="true"></span>
         </div>
+
+        <!-- Countdown digit shown over the screen at the start of a bonus battle. -->
+        <div class="bonus-countdown" id="bonus-countdown" aria-hidden="true"></div>
+
+        <!-- "Snatch and Guess!" banner that slides in / out at the start. -->
+        <div class="bonus-banner" id="bonus-banner" aria-hidden="true"></div>
     </div>
 
     <script src="Start Game.js"></script>
@@ -112,5 +124,8 @@
          and monster's suits don't overlap (stalemate breaker). Safe
          to delete — without it the button never appears. -->
     <script src="Start Game BonusAction.js"></script>
+    <!-- Bonus battle (snatch-and-guess minigame). Safe to delete —
+         without it BonusAction falls back to a disclaimer popup. -->
+    <script src="Start Game BonusBattle.js"></script>
 </body>
 </html>

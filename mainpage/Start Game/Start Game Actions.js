@@ -143,6 +143,9 @@
             }
             window.GameTurnTimer.start();
         }
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
     }
 
     // -------- Prediction-wheel flow --------
