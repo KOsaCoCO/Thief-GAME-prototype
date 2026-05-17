@@ -111,6 +111,13 @@
         if (bonusModeActive) return;
         bonusModeActive = true;
         document.body.classList.add("bonus-mode");
+        // Immediately kill the idle-pressure timer the moment bonus mode
+        // is entered — whether triggered by the player's click or the
+        // monster's auto-fire. No more idle countdown, no more monster
+        // auto-choice between gamble and play card while we're in here.
+        if (window.GameTurnTimer && typeof GameTurnTimer.stop === "function") {
+            GameTurnTimer.stop();
+        }
     }
 
     function exitBonusMode() {

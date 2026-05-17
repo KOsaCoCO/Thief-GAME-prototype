@@ -306,11 +306,15 @@
         // No swap: the attacker STAYS in the player's hand. Only the target
         // leaves the field and joins the player's hand.
         targetFieldEl.remove();
-        GameActions.addCardToPlayerHand(targetCardId);
+        const acquiredCardEl = GameActions.addCardToPlayerHand(targetCardId);
 
         // Mark the attacker as USED for the rest of this battle — it can't
         // be armed again until endBattle clears the flag. Also unarm it.
         playerHandEl.classList.add("used");
+
+        // The card we just took also goes grey for this battle — it can't
+        // be played right away in the same round.
+        if (acquiredCardEl) acquiredCardEl.classList.add("used");
 
         if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
             GameBonusAction.update();
@@ -469,7 +473,18 @@
         // No swap: the monster's hand card STAYS in the monster's hand. Only
         // the player's field card leaves the field and joins the monster's hand.
         playerEl.remove();
-        GameActions.addToMonsterHand(playerCardId);
+        const newSlot = GameActions.addToMonsterHand(playerCardId);
+
+        // The card the monster just took also goes grey for this battle —
+        // it can't be played by the monster in the same round.
+        if (newSlot) newSlot.classList.add("used");
+        monsterUsedThisBattle.add(playerCardId);
+
+        // Successful monster move — reset speed-up counter so the timer
+        // returns to its slow 3s state.
+        if (window.GameTurnTimer && typeof window.GameTurnTimer.resetPlayerCounter === "function") {
+            window.GameTurnTimer.resetPlayerCounter();
+        }
 
         if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
             GameBonusAction.update();

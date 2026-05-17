@@ -64,7 +64,7 @@
         if (active) return;
         active = true;
 
-        // Brief intro popup naming who triggered the bonus battle.
+        // 1) Brief intro popup naming who triggered the bonus battle.
         if (window.GameActions && typeof GameActions.showPopup === "function") {
             const callerText = (who === "monster")
                 ? "Monster called the Bonus!"
@@ -77,6 +77,17 @@
             GameTurnTimer.stop();
         }
 
+        // 2) Let the intro popup fade, then show the rules popup that
+        //    requires an explicit OK click before the battle starts.
+        await wait(2700);
+        await waitForPopupOk(
+            "In this mode, cards are shuffled randomly.\n" +
+            "You need to guess the suit shown on the spinning wheel —\n" +
+            "it changes every 3 seconds, cycling between circle, square,\n" +
+            "and triangle at random.\n" +
+            "Whoever ends up with more cards receives a special card."
+        );
+
         const field = document.getElementById("monster-field");
         const fieldCards = field
             ? Array.from(field.querySelectorAll(".card"))
@@ -85,7 +96,7 @@
         // Nothing to snatch — bail straight away.
         if (fieldCards.length === 0) {
             await showBanner("No cards on the field!");
-            end();
+            end(true);                  // skip the "Game's Over!" finale
             return;
         }
 
@@ -97,7 +108,44 @@
         beginSnatchPhase(field);
     }
 
-    function end() {
+    // -------- Small promise helpers --------
+
+    function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function waitForPopupOk(message) {
+        return new Promise((resolve) => {
+            if (window.GameActions && typeof GameActions.showPopup === "function") {
+                GameActions.showPopup(message, {
+                    needsOk: true,
+                    onOk: resolve,
+                });
+            } else {
+                resolve();
+            }
+        });
+    }
+
+    // -------- End-of-battle check --------
+
+    // Returns the count of field cards that haven't been removed AND aren't
+    // currently being animated into a hand.
+    function fieldCardsRemaining() {
+        return document.querySelectorAll(
+            ".monster-field .card:not(.losing):not(.monster-snatching)"
+        ).length;
+    }
+
+    // Single source of truth for "all cards have been re-distributed".
+    // Wired into the player click, the monster snatch path, the suit
+    // cycle, and the monster tick — so any path leaves no stragglers.
+    function checkEndCondition() {
+        if (!active) return;
+        if (fieldCardsRemaining() === 0) end();
+    }
+
+    async function end(skipFinale) {
         if (!active) return;
         active = false;
 
@@ -132,11 +180,95 @@
         }
         fieldClickHandler = null;
 
+        // Cinematic outro: first award the special card to whichever side
+        // ended with more hand cards (so the player can see it appear),
+        // then slide the "Game's Over!" banner. Skip both when there was
+        // nothing to play with in the first place.
+        if (!skipFinale) {
+            try {
+                awardSpecialCard();
+                await wait(800);          // beat so the new card is noticeable
+                await showBanner("Game's Over!");
+            } catch (err) {
+                console.warn("[bonus] finale error:", err);
+            }
+        }
+
         // Hand control back to BonusAction (which restores body class,
-        // restarts timer, re-checks defeat).
+        // restarts timer, re-checks defeat). Regular play continues from
+        // here until either side runs out of cards.
         if (window.GameBonusAction && typeof GameBonusAction.exitBonusMode === "function") {
             GameBonusAction.exitBonusMode();
         }
+        // Defensive: ensure the bonus-mode visuals are torn down even if
+        // BonusAction's exitBonusMode failed for any reason.
+        document.body.classList.remove("bonus-mode");
+        document.body.classList.remove("snatching");
+        document.body.classList.remove("snatch-penalty");
+
+        // BELT-AND-SUSPENDERS: re-arm the idle-pressure timer so the
+        // normal-game loop resumes (player <-> monster) until either side
+        // runs out of cards. Reset the speed-up counter so the next turn
+        // starts at the slow 3s duration.
+        if (window.GameTurnTimer) {
+            if (typeof GameTurnTimer.resetPlayerCounter === "function") {
+                GameTurnTimer.resetPlayerCounter();
+            }
+            if (typeof GameTurnTimer.checkDefeat === "function") {
+                // If the bonus battle wiped out the monster, the win popup
+                // appears here and start() will no-op via the defeat guard.
+                GameTurnTimer.checkDefeat();
+            }
+            if (typeof GameTurnTimer.start === "function") {
+                GameTurnTimer.start();
+            }
+        }
+    }
+
+    // -------- Special-card award --------
+    //
+    // Whichever side has more cards in hand at the end of a bonus round
+    // is granted a "special" card — a face-down card with a cross on the
+    // sleeve, no number, that shimmers dark red. For the player it goes
+    // into the hand row; for the monster it goes into the buff-slot box
+    // (slot version with a dark-red sleeve). Ties give nothing.
+    function awardSpecialCard() {
+        const playerHandCount = document.querySelectorAll(
+            ".hand .card:not(.special-bonus-card)"
+        ).length;
+        const monsterHandCount = (window.GameActions && typeof GameActions.getMonsterHand === "function")
+            ? GameActions.getMonsterHand().length
+            : 0;
+
+        if (monsterHandCount > playerHandCount) {
+            grantSpecialToMonster();
+        } else if (playerHandCount > monsterHandCount) {
+            grantSpecialToPlayer();
+        }
+    }
+
+    function grantSpecialToPlayer() {
+        const hand = document.getElementById("hand");
+        if (!hand) return;
+        const card = document.createElement("div");
+        card.className = "card special-bonus-card";
+        const cross = document.createElement("span");
+        cross.className = "special-cross";
+        cross.textContent = "✕";
+        card.appendChild(cross);
+        hand.appendChild(card);
+    }
+
+    function grantSpecialToMonster() {
+        const box = document.getElementById("monster-box");
+        if (!box) return;
+        const slot = document.createElement("span");
+        slot.className = "slot special-bonus-slot";
+        const cross = document.createElement("span");
+        cross.className = "special-cross";
+        cross.textContent = "✕";
+        slot.appendChild(cross);
+        box.appendChild(slot);
     }
 
     // -------- Phase 2: flip + shuffle --------
@@ -242,6 +374,11 @@
 
     function monsterSnatchTick() {
         if (!active) return;
+        // Safety net: end the battle if the field is empty.
+        if (fieldCardsRemaining() === 0) {
+            end();
+            return;
+        }
         if (!currentSuit) return;
         // The monster's decision is independent of any player penalty.
         if (Math.random() >= MONSTER_HIT_CHANCE) return;
@@ -288,11 +425,13 @@
             if (window.GameActions && typeof GameActions.addToMonsterHand === "function") {
                 GameActions.addToMonsterHand(cardId);
             }
-            // If the field is now empty, end the snatch battle.
-            const remaining = document.querySelectorAll(
-                ".monster-field .card:not(.losing):not(.monster-snatching)"
-            ).length;
-            if (remaining === 0) end();
+            // The monster just made a successful move — reset the turn-timer
+            // speed-up counter so post-bonus play resumes at 3s.
+            if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+                GameTurnTimer.resetPlayerCounter();
+            }
+            // If every field card has been re-distributed, end the battle.
+            checkEndCondition();
         }, MONSTER_FLY_MS);
     }
 
@@ -300,6 +439,8 @@
         currentSuit = SUITS[Math.floor(Math.random() * SUITS.length)];
         const el = document.getElementById("bonus-snatch-suit");
         if (el) el.textContent = SYMBOLS[currentSuit];
+        // Safety net: if the field is empty by now, end the battle.
+        checkEndCondition();
     }
 
     function stopSuitCycle() {
@@ -330,13 +471,8 @@
             if (window.GameActions && typeof GameActions.addCardToPlayerHand === "function") {
                 GameActions.addCardToPlayerHand(cardId);
             }
-            // If every field card has been snatched, end the battle.
-            setTimeout(() => {
-                const remaining = document.querySelectorAll(
-                    ".monster-field .card:not(.losing)"
-                ).length;
-                if (remaining === 0) end();
-            }, 400);
+            // If every field card has been re-distributed, end the battle.
+            setTimeout(checkEndCondition, 400);
         } else {
             // Wrong snatch — 1-second penalty.
             penaltyActive = true;

@@ -28,13 +28,44 @@
 (function () {
     "use strict";
 
-    const TIMER_MS = 3000;          // must match the CSS @keyframes duration
+    // Sequence of timer durations as the player keeps acting WITHOUT the
+    // monster managing a successful counter-move. Index = number of player
+    // actions since the last successful monster move.
+    const TIMER_STEPS_MS = [3000, 2000, 700];
+    // Index at which we add body.timer-fast (so the monster sprite shivers).
+    const FAST_STAGE_INDEX = 2;
 
     let timerEl  = null;
     let fillEl   = null;
     let pendingTimeout = null;
     let running  = false;
     let monsterDefeated = false;    // permanently true once the monster has 0 cards total
+    let playerCounter   = 0;        // how many player actions since the last monster move
+
+    function currentDurationMs() {
+        const idx = Math.min(playerCounter, TIMER_STEPS_MS.length - 1);
+        return TIMER_STEPS_MS[idx];
+    }
+
+    function bumpPlayerCounter() {
+        playerCounter++;
+        updateFastBodyClass();
+    }
+
+    function resetPlayerCounter() {
+        playerCounter = 0;
+        updateFastBodyClass();
+    }
+
+    // body.timer-fast drives the monster-shiver CSS when the timer has
+    // reached its fastest stage. Suppressed during bonus mode.
+    function updateFastBodyClass() {
+        if (playerCounter >= FAST_STAGE_INDEX) {
+            document.body.classList.add("timer-fast");
+        } else {
+            document.body.classList.remove("timer-fast");
+        }
+    }
 
     document.addEventListener("DOMContentLoaded", () => {
         // Defer one tick so other scripts' DOMContentLoaded handlers run first.
@@ -55,20 +86,29 @@
     function start() {
         if (!timerEl || !fillEl) return;
         if (monsterDefeated) return;      // game's over, no more pressure
+        // Don't restart while a bonus battle is in progress — every call
+        // site that pings start() (actionEnded, endBattle, in-flight gamble
+        // resolutions) will silently no-op until the bonus battle exits.
+        if (window.GameBonusAction
+            && typeof GameBonusAction.isActive === "function"
+            && GameBonusAction.isActive()) return;
         if (checkMonsterDefeat()) return; // just check now in case we missed it
         if (running) stop();              // restart cleanly if already running
 
         running = true;
+        updateFastBodyClass();              // re-apply shiver class if at fastest stage
+        const ms = currentDurationMs();
         timerEl.classList.add("visible");
         // Force a reflow so the animation restarts from 0 even on rapid re-opens.
         timerEl.classList.remove("running");
         fillEl.style.animation = "none";
         void fillEl.offsetWidth;
         fillEl.style.animation = "";
+        fillEl.style.animationDuration = ms + "ms";
         timerEl.classList.add("running");
 
         if (pendingTimeout) clearTimeout(pendingTimeout);
-        pendingTimeout = setTimeout(onExpire, TIMER_MS);
+        pendingTimeout = setTimeout(onExpire, ms);
     }
 
     function stop() {
@@ -86,6 +126,8 @@
         void fillEl.offsetWidth;
         fillEl.style.animation = "";
         fillEl.style.width = "";
+        // No timer means no shiver.
+        document.body.classList.remove("timer-fast");
     }
 
     // -------- Expiry --------
@@ -119,6 +161,13 @@
         // If the monster is already wiped out, just show the win popup
         // (idempotently) and don't bother with an action.
         if (checkMonsterDefeat()) return;
+
+        // Block hand input briefly so the monster's "Time's up!" popup
+        // can't overlap with a player choice modal triggered by a click
+        // landing at the same instant. The card vibrates if clicked.
+        if (window.GameActions && typeof GameActions.blockPlayerInput === "function") {
+            GameActions.blockPlayerInput(600);
+        }
 
         // Build the list of available auto-actions.
         // Bonus action is an additional option ONLY in case-2 (disjoint
@@ -154,7 +203,18 @@
             if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
                 GameBonusAction.update();
             }
-            if (!checkMonsterDefeat()) start();
+            if (checkMonsterDefeat()) return;
+
+            // 600 ms grace period: if during this window the player clicks
+            // a hand card and enters the choice menu, the timer stays
+            // paused. Otherwise the idle-pressure cycle resumes.
+            setTimeout(() => {
+                const playerActing = window.GameActions
+                    && typeof GameActions.isActing === "function"
+                    && GameActions.isActing();
+                if (playerActing) return;             // player already in a choice -> stay paused
+                start();
+            }, 600);
         }, 1400);
     }
 
@@ -184,6 +244,8 @@
                     GameActions.showPopup(
                         `Time's up! Monster played a card\nand took your #${playerCardId} from the field.`
                     );
+                    // Successful monster move — reset speed-up counter.
+                    resetPlayerCounter();
                     return true;
                 }
             }
@@ -216,6 +278,8 @@
                 GameActions.showPopup(
                     `Time's up! Monster gambled correctly\nand took your card #${cardId} onto the field.`
                 );
+                // Successful monster move — reset speed-up counter.
+                resetPlayerCounter();
                 return;
             }
             // No player hand cards left — fall through to placing own card.
@@ -266,6 +330,12 @@
     }
 
     // -------- Public API --------
-    window.GameTurnTimer = { start, stop, checkDefeat: checkMonsterDefeat };
+    window.GameTurnTimer = {
+        start,
+        stop,
+        checkDefeat: checkMonsterDefeat,
+        bumpPlayerCounter,
+        resetPlayerCounter,
+    };
 
 })();

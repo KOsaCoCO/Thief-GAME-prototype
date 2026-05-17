@@ -190,6 +190,22 @@ html, body {
     object-position: center bottom;
 }
 
+/* When the player has been making moves faster than the monster can
+   respond and the timer has reached its fastest stage, the monster
+   visibly shivers — a quick anxious wobble. Suppressed during bonus
+   mode (where the monster has its own zoom/translate transform). */
+@keyframes monsterShiver {
+    0%, 100% { transform: translateX(-50%)            translateY(0);   }
+    20%      { transform: translateX(calc(-50% - 4px)) translateY(2px); }
+    40%      { transform: translateX(calc(-50% + 4px)) translateY(-1px); }
+    60%      { transform: translateX(calc(-50% - 3px)) translateY(1px); }
+    80%      { transform: translateX(calc(-50% + 3px)) translateY(-2px); }
+}
+
+body.timer-fast:not(.bonus-mode) .layer-monster {
+    animation: monsterShiver 0.16s linear infinite;
+}
+
 /* -------- Monster playing field (revealed opponent cards) --------
 
    Centered in the middle of the screen, visually ABOVE the player's hand.
@@ -636,6 +652,23 @@ html, body {
     animation: handCardArrive 0.4s ease;
 }
 
+/* "Rejected" vibration — plays for 0.5s when the player clicks a hand
+   card while the monster is mid-move (input blocked). Visually signals
+   "you can't click yet" without needing a popup. */
+@keyframes cardVibrateReject {
+    0%   { transform: translateX(0)    rotate(0); }
+    15%  { transform: translateX(-8px) rotate(-2deg); }
+    30%  { transform: translateX(8px)  rotate(2deg); }
+    45%  { transform: translateX(-6px) rotate(-1deg); }
+    60%  { transform: translateX(6px)  rotate(1deg); }
+    75%  { transform: translateX(-3px) rotate(0); }
+    100% { transform: translateX(0)    rotate(0); }
+}
+
+.hand .card.vibrating {
+    animation: cardVibrateReject 0.5s ease;
+}
+
 /* -------- Status popup --------
    Centered on screen, fades in / scales up when shown, auto-hides after a
    couple of seconds. Used for situations the game can't resolve normally
@@ -1041,6 +1074,90 @@ body.snatch-penalty .monster-field .card {
    clicks while it's in-flight so it can't be grabbed mid-air. */
 .monster-field .card.monster-snatching {
     pointer-events: none;
+}
+
+/* -------- Special bonus card (awarded after a bonus round) --------
+   Always shown sleeve-side up with a large cross (no number). Shimmers
+   dark red. The MONSTER variant lives in the buff-slot box and has a
+   dark-red sleeve color; the PLAYER variant uses the default sleeve
+   styling but still shimmers dark red. */
+
+@keyframes specialShimmer {
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(139, 0, 0, 0.55),
+                    0 6px 16px rgba(0, 0, 0, 0.55);
+    }
+    50% {
+        box-shadow: 0 0 26px rgba(220, 30, 30, 1),
+                    0 0 38px rgba(139, 0, 0, 0.7),
+                    0 6px 16px rgba(0, 0, 0, 0.55);
+    }
+}
+
+/* Player-side: sits in the .hand row. Dark-red sleeve so it visually
+   matches the monster's variant and shimmers with red glow. Not clickable. */
+.hand .card.special-bonus-card {
+    position: relative;
+    background-color: #5b1a1a;
+    background-image: repeating-linear-gradient(
+        45deg,
+        #722525 0,
+        #722525 8px,
+        #5b1a1a 8px,
+        #5b1a1a 16px
+    );
+    border-color: #2c3e50;
+    color: transparent;
+    cursor: default;
+    pointer-events: none;
+    overflow: hidden;
+    animation: specialShimmer 1.8s ease-in-out infinite;
+}
+
+.hand .card.special-bonus-card:hover {
+    transform: none;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+}
+
+.hand .card.special-bonus-card .special-cross {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2.8rem;
+    font-weight: 900;
+    color: #ffffff;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+}
+
+/* Monster-side: lives as a slot in the .monster-box. Sleeve is dark red
+   so the monster's special card looks distinct from regular slots. */
+.monster-box .slot.special-bonus-slot {
+    position: relative;
+    background-color: #5b1a1a;          /* dark red sleeve */
+    border-color: #2c3e50;
+    color: #f8d0d0;
+    overflow: hidden;
+    animation: specialShimmer 1.6s ease-in-out infinite;
+}
+
+.monster-box .slot.special-bonus-slot .special-cross {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+}
+
+/* The "+" indicator from special-triangle cards should not show here. */
+.hand .card.special-bonus-card::before,
+.monster-box .slot.special-bonus-slot::before {
+    display: none;
 }
 
 /* -------- Bonus action button --------

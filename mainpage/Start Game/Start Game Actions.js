@@ -49,6 +49,10 @@
     const POPUP_DURATION_MS  = 2400;
     const POPUP_LOSE_DELAY   = 1300; // how long to wait inside popup before the card-loss kicks in
     const POST_SPIN_HOLD_MS  = 600;  // pause between wheel landing and the actual outcome
+    // After monsterPlaysCard/playerLosesCard fires, hold the lock so the
+    // animation (reveal -> jump -> remove -> place / lose -> new slot)
+    // can fully play before the (possibly fast) timer restarts.
+    const RESOLUTION_FINISH_MS = 1100;
 
     // The monster's CURRENT hand of card IDs.
     // Starts with INITIAL_HAND random cards; grows when the monster
@@ -113,6 +117,28 @@
 
     // Prevent overlapping clicks while a prediction sequence is mid-flight
     let predictionInProgress = false;
+    // Until this timestamp, hand clicks are rejected with a vibration —
+    // used right when the monster takes a move so its popup and the
+    // player's choice modal can't overlap.
+    let inputBlockedUntil = 0;
+
+    function isInputBlocked() {
+        return Date.now() < inputBlockedUntil;
+    }
+
+    function blockPlayerInput(ms) {
+        const newDeadline = Date.now() + ms;
+        if (newDeadline > inputBlockedUntil) inputBlockedUntil = newDeadline;
+    }
+
+    function vibrateCard(cardEl) {
+        if (!cardEl) return;
+        cardEl.classList.remove("vibrating");
+        // Force reflow so the animation restarts on repeated rejects.
+        void cardEl.offsetWidth;
+        cardEl.classList.add("vibrating");
+        setTimeout(() => cardEl.classList.remove("vibrating"), 500);
+    }
 
     function wireCardClicks() {
         const hand = document.getElementById("hand");
@@ -121,6 +147,12 @@
             const card = e.target.closest(".card");
             if (!card) return;
             if (card.classList.contains("losing")) return;
+            // Monster is mid-move — silently reject the click and shake
+            // the card to make the rejection visually obvious.
+            if (isInputBlocked()) {
+                vibrateCard(card);
+                return;
+            }
             if (predictionInProgress) return;
             // Player has begun acting — stop the idle pressure timer.
             if (window.GameTurnTimer) window.GameTurnTimer.stop();
@@ -137,11 +169,21 @@
             c.classList.remove("gamble-selected");
         });
         predictionInProgress = false;
+
+        // If a bonus battle is currently running, an in-flight gamble or
+        // play-card resolution must NOT bring the timer back. Bonus mode
+        // will restart the timer itself via BonusAction.exitBonusMode().
+        const bonusActive = window.GameBonusAction
+            && typeof GameBonusAction.isActive === "function"
+            && GameBonusAction.isActive();
+
         if (window.GameTurnTimer) {
             if (typeof window.GameTurnTimer.checkDefeat === "function") {
                 window.GameTurnTimer.checkDefeat();
             }
-            window.GameTurnTimer.start();
+            if (!bonusActive) {
+                window.GameTurnTimer.start();
+            }
         }
         if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
             GameBonusAction.update();
@@ -156,10 +198,18 @@
         predictionInProgress = true;
         showChoiceModal((choice) => {
             if (choice === "gamble") {
+                // Player is actually acting — bump the speed-up counter so the
+                // monster's next idle timer ticks faster (3s -> 2s -> 500ms).
+                if (window.GameTurnTimer && typeof GameTurnTimer.bumpPlayerCounter === "function") {
+                    GameTurnTimer.bumpPlayerCounter();
+                }
                 // Jut the chosen card out so the player sees which one is at stake.
                 cardEl.classList.add("gamble-selected");
                 showPredictionArrows((playerCall) => resolvePlay(cardEl, playerCall));
             } else if (choice === "play") {
+                if (window.GameTurnTimer && typeof GameTurnTimer.bumpPlayerCounter === "function") {
+                    GameTurnTimer.bumpPlayerCounter();
+                }
                 if (window.GamePlay && typeof window.GamePlay.enterPlayMode === "function") {
                     window.GamePlay.enterPlayMode(cardEl, actionEnded);
                 } else {
@@ -167,7 +217,7 @@
                     setTimeout(actionEnded, POPUP_DURATION_MS);
                 }
             } else {
-                // Cancel — back to idle, restart the timer.
+                // Cancel — back to idle (no counter bump; player didn't act).
                 actionEnded();
             }
         });
@@ -279,7 +329,9 @@
                     console.log(`[actions] Wrong ${playerCall} call (suit matched, direction off) -> player loses card`);
                     playerLosesCard(cardEl, cardId, shape);
                 }
-                actionEnded();
+                // Wait for the resolution animation to complete before
+                // releasing the lock and restarting the timer.
+                setTimeout(actionEnded, RESOLUTION_FINISH_MS);
             }, POST_SPIN_HOLD_MS);
         });
     }
@@ -496,7 +548,7 @@
 
     function addRevealedSlot(cardId, shape) {
         const box = document.getElementById("monster-box");
-        if (!box) return;
+        if (!box) return null;
 
         const slot = document.createElement("span");
         slot.className = "slot revealed new-slot";
@@ -509,6 +561,7 @@
 
         // Strip the entrance-animation class once it's finished
         setTimeout(() => slot.classList.remove("new-slot"), APPEAR_DURATION_MS + 40);
+        return slot;
     }
 
     // -------- Playing field --------
@@ -558,6 +611,14 @@
             );
             if (slot) slot.remove();
         },
+        // Whether the player is currently inside any committed action
+        // (choice modal open, gamble in flight, play-card battle running).
+        // TurnTimer reads this to decide whether to skip a timer restart.
+        isActing: () => predictionInProgress,
+        // Lock the hand for ms milliseconds so any card-click is rejected
+        // with a vibration. Called by monster auto-actions so their popup
+        // can't overlap with the player's choice modal.
+        blockPlayerInput,
         // Drops one still-"?" slot from the box. Used when a monster card
         // leaves the hand to the field while still hidden to the player
         // (e.g. during the initial setup).
@@ -590,16 +651,20 @@
         addToMonsterHand: (cardId) => {
             // Monster gains a card (e.g. won off the player). Adds to the
             // hand state AND to the box as a revealed slot showing its sign.
+            // Returns the slot element so the caller can mark it (e.g. .used).
             monsterHand.push(cardId);
             if (typeof getShapeForCard === "function") {
                 const shape = getShapeForCard(cardId);
-                addRevealedSlot(cardId, shape);
+                return addRevealedSlot(cardId, shape);
             }
+            return null;
         },
         addCardToPlayerHand: (cardId) => {
+            // Returns the created card element so callers can immediately
+            // mark it (e.g. .used so it can't be played that same round).
             const hand = document.getElementById("hand");
-            if (!hand) return;
-            if (typeof getShapeForCard !== "function" || typeof paintCard !== "function") return;
+            if (!hand) return null;
+            if (typeof getShapeForCard !== "function" || typeof paintCard !== "function") return null;
             const shape = getShapeForCard(cardId);
             const card = document.createElement("div");
             card.className = `card shape-${shape} arriving`;
@@ -608,6 +673,7 @@
             paintCard(card, cardId, shape);
             hand.appendChild(card);
             setTimeout(() => card.classList.remove("arriving"), 450);
+            return card;
         },
     };
 
