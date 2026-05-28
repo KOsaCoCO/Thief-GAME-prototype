@@ -164,26 +164,24 @@
     // prediction lock, clears any gamble-highlighted card, checks for
     // monster defeat, and restarts the idle pressure timer (which will
     // no-op if the monster has been defeated).
+    //
+    // No bonus-active check: BonusAction.enterBonusMode is the only
+    // place that stops the timer for a bonus session, and it stops it
+    // again on entry. If an in-flight action's actionEnded fires while
+    // bonus mode is starting, the brief timer-restart-then-stop is
+    // harmless. Removing the check eliminates a class of "timer stays
+    // dead after bonus exit" bugs caused by a stale isActive() flag.
     function actionEnded() {
         document.querySelectorAll(".hand .card.gamble-selected").forEach((c) => {
             c.classList.remove("gamble-selected");
         });
         predictionInProgress = false;
 
-        // If a bonus battle is currently running, an in-flight gamble or
-        // play-card resolution must NOT bring the timer back. Bonus mode
-        // will restart the timer itself via BonusAction.exitBonusMode().
-        const bonusActive = window.GameBonusAction
-            && typeof GameBonusAction.isActive === "function"
-            && GameBonusAction.isActive();
-
         if (window.GameTurnTimer) {
             if (typeof window.GameTurnTimer.checkDefeat === "function") {
                 window.GameTurnTimer.checkDefeat();
             }
-            if (!bonusActive) {
-                window.GameTurnTimer.start();
-            }
+            window.GameTurnTimer.start();
         }
         if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
             GameBonusAction.update();

@@ -86,6 +86,18 @@
         onDoneCallback = onDone;
         battleActive   = true;
 
+        // HARD-STOP the idle pressure timer for the entire battle. Even
+        // though wireCardClicks already stopped it when the player first
+        // clicked, some external code path (an old exitBonusMode pause,
+        // a SpecialBattle exit, an in-flight gamble's actionEnded) can
+        // race and restart it mid-battle. Stopping here, plus the
+        // body.playcard-mode CSS guard below, makes sure the slider is
+        // off and the monster does not auto-act while we're in here.
+        if (window.GameTurnTimer && typeof GameTurnTimer.stop === "function") {
+            GameTurnTimer.stop();
+        }
+        document.body.classList.add("playcard-mode");
+
         // The card the player clicked from the choice modal is the first armed card.
         armCard(cardEl);
 
@@ -93,6 +105,14 @@
     }
 
     function startBattle() {
+        // Belt: stop the timer again at battle start. The hard-stop in
+        // enterPlayMode already did it, but this protects against any
+        // weird re-entry where startBattle is called without going
+        // through enterPlayMode's stop path.
+        if (window.GameTurnTimer && typeof GameTurnTimer.stop === "function") {
+            GameTurnTimer.stop();
+        }
+
         attachFieldTargetListeners();
 
         // Intercept hand clicks in capture phase so the Actions.js click
@@ -131,7 +151,11 @@
         });
         monsterUsedThisBattle.clear();
 
-        // Battle is over — back to idle, restart the pressure timer.
+        // Battle is over — strip the body guard, then restart the pressure
+        // timer. Order matters: the body class has to be off BEFORE
+        // start() so the CSS opacity-0 guard doesn't keep the slider
+        // invisible.
+        document.body.classList.remove("playcard-mode");
         if (window.GameTurnTimer) window.GameTurnTimer.start();
 
         detachFieldTargetListeners();
@@ -250,20 +274,15 @@
         const handCards = document.querySelectorAll(".hand .card:not(.used)");
         if (handCards.length === 0) return false;
 
-        // Reclaiming any player-owned field card with ANY hand card is always valid.
-        if (document.querySelector(".monster-field .card[data-owner='player']")) return true;
-
-        // Otherwise the player needs a hand card that can beat at least one
-        // monster-owned field card per the suit hierarchy.
-        const monsterFieldCards = document.querySelectorAll(
-            ".monster-field .card[data-owner='monster']"
-        );
-        if (monsterFieldCards.length === 0) return false;
+        // EVERY field card — whether the player's own or the monster's —
+        // requires a real suit-hierarchy + number win to be takeable.
+        const fieldCards = document.querySelectorAll(".monster-field .card[data-owner]");
+        if (fieldCards.length === 0) return false;
 
         for (const handCard of handCards) {
             const handId    = Number(handCard.dataset.cardId);
             const handShape = handCard.dataset.shape;
-            for (const target of monsterFieldCards) {
+            for (const target of fieldCards) {
                 const targetId    = Number(target.dataset.cardId);
                 const targetShape = target.dataset.shape;
                 if (canBeat(handShape, handId, targetShape, targetId)) return true;
@@ -294,13 +313,14 @@
         const targetShape  = targetFieldEl.dataset.shape;
         const targetOwner  = targetFieldEl.dataset.owner;
 
-        if (targetOwner !== "player") {
-            if (!canBeat(playerShape, playerCardId, targetShape, targetCardId)) {
-                GameActions.showPopup(
-                    whyCantBeat(playerShape, playerCardId, targetShape, targetCardId)
-                );
-                return;
-            }
+        // The suit hierarchy + number rule applies to EVERY field card —
+        // even cards you originally placed on the field. Your circle 1
+        // can't take your own circle 8 back just because it was yours.
+        if (!canBeat(playerShape, playerCardId, targetShape, targetCardId)) {
+            GameActions.showPopup(
+                whyCantBeat(playerShape, playerCardId, targetShape, targetCardId)
+            );
+            return;
         }
 
         // No swap: the attacker STAYS in the player's hand. Only the target
@@ -530,6 +550,9 @@
         enterPlayMode,
         endBattle,
         canBeat,
+        // BonusAction reads this so its case-1 auto-fire doesn't
+        // interrupt an in-flight play-card battle.
+        isActive: () => battleActive,
     };
 
 })();

@@ -194,32 +194,24 @@
             }
         }
 
-        // Hand control back to BonusAction (which restores body class,
-        // restarts timer, re-checks defeat). Regular play continues from
-        // here until either side runs out of cards.
+        // Reset the speed-up counter so the next idle timer starts at
+        // the slow 3s duration rather than a stale 700ms from before.
+        if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+            GameTurnTimer.resetPlayerCounter();
+        }
+
+        // Single canonical exit path: BonusAction.exitBonusMode strips
+        // the body class, clears the active flag, restarts the idle
+        // pressure timer, and refreshes the button. No defensive layers,
+        // no force flags — the timer no longer has a bonus-active gate,
+        // so one clean call here resumes normal play.
         if (window.GameBonusAction && typeof GameBonusAction.exitBonusMode === "function") {
             GameBonusAction.exitBonusMode();
-        }
-        // Defensive: ensure the bonus-mode visuals are torn down even if
-        // BonusAction's exitBonusMode failed for any reason.
-        document.body.classList.remove("bonus-mode");
-        document.body.classList.remove("snatching");
-        document.body.classList.remove("snatch-penalty");
-
-        // BELT-AND-SUSPENDERS: re-arm the idle-pressure timer so the
-        // normal-game loop resumes (player <-> monster) until either side
-        // runs out of cards. Reset the speed-up counter so the next turn
-        // starts at the slow 3s duration.
-        if (window.GameTurnTimer) {
-            if (typeof GameTurnTimer.resetPlayerCounter === "function") {
-                GameTurnTimer.resetPlayerCounter();
-            }
-            if (typeof GameTurnTimer.checkDefeat === "function") {
-                // If the bonus battle wiped out the monster, the win popup
-                // appears here and start() will no-op via the defeat guard.
-                GameTurnTimer.checkDefeat();
-            }
-            if (typeof GameTurnTimer.start === "function") {
+        } else {
+            // Fallback if BonusAction isn't loaded — start the timer
+            // directly so the main game still resumes.
+            document.body.classList.remove("bonus-mode");
+            if (window.GameTurnTimer && typeof GameTurnTimer.start === "function") {
                 GameTurnTimer.start();
             }
         }

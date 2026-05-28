@@ -82,16 +82,28 @@
     }
 
     // -------- Public start/stop --------
+    //
+    // start() is gated only by body-class flags set by full-screen modes
+    // (playcard-mode, bonus-mode, special-battle-mode). Each mode adds
+    // its own class on entry and strips it on exit — reading directly
+    // from the class list means we can't wedge on a stale JS isActive()
+    // flag the way the old GameBonusAction.isActive() check could.
+    //
+    // An optional opts arg is accepted (legacy { force: true } from older
+    // call sites) but ignored.
 
-    function start() {
+    function start(_opts) {
         if (!timerEl || !fillEl) return;
         if (monsterDefeated) return;      // game's over, no more pressure
-        // Don't restart while a bonus battle is in progress — every call
-        // site that pings start() (actionEnded, endBattle, in-flight gamble
-        // resolutions) will silently no-op until the bonus battle exits.
-        if (window.GameBonusAction
-            && typeof GameBonusAction.isActive === "function"
-            && GameBonusAction.isActive()) return;
+
+        // No idle-pressure timer while another mode owns the screen.
+        // Each mode is responsible for clearing its body class on exit,
+        // at which point the next start() call resumes the timer.
+        const cls = document.body.classList;
+        if (cls.contains("playcard-mode"))      return;
+        if (cls.contains("bonus-mode"))         return;
+        if (cls.contains("special-battle-mode")) return;
+
         if (checkMonsterDefeat()) return; // just check now in case we missed it
         if (running) stop();              // restart cleanly if already running
 
@@ -265,8 +277,12 @@
         const guessedCorrectly = Math.random() < 0.5;
 
         if (guessedCorrectly) {
-            // Try to take a player hand card to the field.
-            const playerCards = document.querySelectorAll(".hand .card:not(.losing)");
+            // Try to take a player hand card to the field. Exclude special
+            // bonus cards (they're visual trophies, not game cards) and any
+            // card mid losing-animation.
+            const playerCards = document.querySelectorAll(
+                ".hand .card:not(.losing):not(.special-bonus-card)"
+            );
             if (playerCards.length > 0) {
                 const target = playerCards[Math.floor(Math.random() * playerCards.length)];
                 const cardId = Number(target.dataset.cardId);

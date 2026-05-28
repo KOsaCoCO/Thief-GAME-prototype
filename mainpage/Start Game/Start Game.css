@@ -831,6 +831,25 @@ body.timer-fast:not(.bonus-mode) .layer-monster {
     transform: scale(0.95);
 }
 
+/* Bonus mode is a hard INTERRUPT of the main game — the idle-pressure
+   timer is stopped on entry and restarted on exit. Visual safety:
+   if any in-flight code path ever calls TurnTimer.start() while the
+   body is still in .bonus-mode, the slider stays invisible. */
+body.bonus-mode .turn-timer {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Same belt-and-suspenders rule for play-card battles. PlayCard.js
+   hard-stops the timer on entry, but if an in-flight action's
+   actionEnded or a stale exitBonusMode setTimeout calls start() during
+   a battle, this keeps the slider invisible and ticking inert until
+   the battle ends. */
+body.playcard-mode .turn-timer {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 /* -------- Cinematic letterbox bars (only visible in bonus battle mode) -------- */
 .letterbox {
     position: fixed;
@@ -1095,7 +1114,9 @@ body.snatch-penalty .monster-field .card {
 }
 
 /* Player-side: sits in the .hand row. Dark-red sleeve so it visually
-   matches the monster's variant and shimmers with red glow. Not clickable. */
+   matches the monster's variant and shimmers with red glow. CLICKABLE —
+   the click is intercepted by SpecialBattle.js (capture phase) and
+   routed straight into the timed special battle mode. */
 .hand .card.special-bonus-card {
     position: relative;
     background-color: #5b1a1a;
@@ -1108,15 +1129,16 @@ body.snatch-penalty .monster-field .card {
     );
     border-color: #2c3e50;
     color: transparent;
-    cursor: default;
-    pointer-events: none;
+    cursor: pointer;
+    pointer-events: auto;
     overflow: hidden;
     animation: specialShimmer 1.8s ease-in-out infinite;
 }
 
 .hand .card.special-bonus-card:hover {
-    transform: none;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+    transform: translateY(-12px) scale(1.05);
+    box-shadow: 0 14px 22px rgba(220, 30, 30, 0.85),
+                0 14px 22px rgba(0, 0, 0, 0.65);
 }
 
 .hand .card.special-bonus-card .special-cross {
@@ -1206,6 +1228,147 @@ body.snatch-penalty .monster-field .card {
 @keyframes bonusPulseBtn {
     0%, 100% { box-shadow: 0 10px 22px rgba(0, 0, 0, 0.55), 0 0 0 rgba(142, 68, 173, 0.45); }
     50%      { box-shadow: 0 10px 22px rgba(0, 0, 0, 0.55), 0 0 24px rgba(142, 68, 173, 0.85); }
+}
+
+/* -------- Special battle mode --------
+   Triggered when the player plays the red-cross special bonus card.
+   The gaming-field elements dim out via filter, while the player's
+   hand, the monster sprite, and the special card itself stay bright.
+   The special card sits in a centered "stage" element and wiggles. */
+
+/* Dim the playing-field-side elements. Targets are listed individually
+   instead of dimming a common ancestor because the monster, hand, and
+   special-battle-stage all need to stay un-dimmed and live as siblings
+   inside the scene/body. */
+body.special-battle-mode .layer-background,
+body.special-battle-mode .layer-middleground,
+body.special-battle-mode .layer-foreground,
+body.special-battle-mode .monster-box,
+body.special-battle-mode .monster-field,
+body.special-battle-mode .turn-timer,
+body.special-battle-mode .prediction-wheel,
+body.special-battle-mode .bonus-action-btn {
+    filter: brightness(0.25) saturate(0.45);
+    transition: filter 0.45s ease;
+}
+
+/* The other hand cards stay un-dimmed and clickable — but pointer-events
+   should be off during the special battle (it's a single-card moment,
+   the rest of the hand doesn't act). The visual brightness is preserved.
+   Re-enabled on exit when the body class is removed. */
+body.special-battle-mode .hand .card {
+    pointer-events: none;
+}
+
+/* Centered fixed-position stage that holds the wiggling special card and
+   its countdown timer. Above the dimmed scene, below the popup layer. */
+.special-battle-stage {
+    position: fixed;
+    inset: 0;
+    z-index: 140;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+    pointer-events: none;       /* purely visual stage */
+}
+
+/* The special card while parented to the stage. Re-applies the dark-red
+   striped sleeve + cross styling (the original styles were scoped to
+   .hand .card.special-bonus-card and don't carry over), then layers the
+   wiggle + shimmer animations together. */
+.special-battle-card.card {
+    position: relative;
+    height: 32vh;
+    aspect-ratio: 2 / 3;
+    margin: 0;
+    background-color: #5b1a1a;
+    background-image: repeating-linear-gradient(
+        45deg,
+        #722525 0,
+        #722525 8px,
+        #5b1a1a 8px,
+        #5b1a1a 16px
+    );
+    border: 2px solid #2c3e50;
+    border-radius: 10px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: transparent;
+    pointer-events: none;
+    transform-origin: 50% 90%;
+    animation: specialWiggle 0.65s ease-in-out infinite,
+               specialShimmer 1.6s ease-in-out infinite;
+}
+
+.special-battle-card.card .special-cross {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 5rem;
+    font-weight: 900;
+    color: #ffffff;
+    text-shadow: 0 4px 12px rgba(0, 0, 0, 0.85);
+    pointer-events: none;
+}
+
+/* Wiggle keyframes — small rapid pendulum sway with a hint of vertical
+   bounce so the card feels "alive" while it's center stage. */
+@keyframes specialWiggle {
+    0%, 100% { transform: rotate(-6deg) translateY(0); }
+    25%      { transform: rotate(5deg)  translateY(-5px); }
+    50%      { transform: rotate(-4deg) translateY(2px); }
+    75%      { transform: rotate(6deg)  translateY(-4px); }
+}
+
+/* Countdown timer beneath the special card. Bright on the dimmed scene
+   so the player can clearly read the remaining seconds. */
+.special-battle-timer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.special-battle-timer-label {
+    font-size: 2.8rem;
+    font-weight: 900;
+    color: #ffffff;
+    font-family: inherit;
+    text-shadow: 0 4px 14px rgba(0, 0, 0, 0.9),
+                 0 0 22px rgba(220, 30, 30, 0.85);
+    line-height: 1;
+}
+
+.special-battle-timer-bar {
+    width: 240px;
+    height: 12px;
+    background-color: rgba(255, 255, 255, 0.18);
+    border: 2px solid #ffffff;
+    border-radius: 7px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+.special-battle-timer-fill {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right, #f1c40f, #c0392b);
+    transform-origin: left center;
+    /* animation-duration is set inline by SpecialBattle.js so a future
+       change to TIMER_MS only requires editing the JS constant. */
+    animation: specialTimerDrain linear forwards;
+}
+
+@keyframes specialTimerDrain {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
 }
 
 /* -------- Back to Main Menu -------- */
