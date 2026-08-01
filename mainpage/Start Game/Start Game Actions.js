@@ -318,9 +318,12 @@
         spinWheelToResult(isHigher).then(() => {
             setTimeout(() => {
                 if (correctMatches.length > 0) {
-                    const monsterCardId = correctMatches[
-                        Math.floor(Math.random() * correctMatches.length)
-                    ];
+                    // WHICH matching card the monster reveals is its decision —
+                    // lives in Start Game AI_brain.js. Falls back to a plain
+                    // random pick if that file isn't loaded.
+                    const monsterCardId = (window.GameAI && typeof GameAI.pickGambleCard === "function")
+                        ? GameAI.pickGambleCard(correctMatches)
+                        : correctMatches[Math.floor(Math.random() * correctMatches.length)];
                     console.log(`[actions] Correct ${playerCall} call -> monster plays ${monsterCardId}`);
                     monsterPlaysCard(monsterCardId);
                 } else {

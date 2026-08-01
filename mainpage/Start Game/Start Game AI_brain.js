@@ -1,0 +1,434 @@
+// =============================================================
+// Start Game AI_brain
+// -------------------------------------------------------------
+// Home for the MONSTER's decision-making. Every place the monster
+// "chooses" something — which card to reveal, whether to attack,
+// what to do when the player goes idle — lives here instead of
+// inside the file that triggers it.
+//
+// SEPARATE on purpose (same reasoning as Start Game Actions.js) —
+// modify freely, or delete the file + its <script> tag if it ever
+// breaks. Every call site guards with `window.GameAI && typeof ...`,
+// so without this file the monster simply stops acting on its own;
+// the rest of the game (hand, field, gamble wheel, play-card
+// targeting) keeps working.
+//
+// Reads from: window.GameActions, window.GamePlay, window.GameTurnTimer,
+// window.GameBonusAction, and the globals getShapeForCard()/isSpecialCard()
+// from Start Game.js. Never reaches into another file's private state —
+// only their public bridge APIs, so this file can be edited without
+// touching anything else.
+//
+// Current behavior is intentionally simple (mostly random) — this is
+// the file to expand when the monster's behavior gets configured
+// in depth.
+// =============================================================
+
+(function () {
+    "use strict";
+
+    // -------- Gamble response --------
+    // Called by Actions.js when the player's high/low call was correct
+    // and the monster has 1+ same-suit cards that satisfy it. Decides
+    // WHICH of those cards the monster reveals.
+    function pickGambleCard(candidates) {
+        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    // -------- Play-card battle --------
+
+    // Card IDs the monster has already used as an ATTACKER during the
+    // current play-card battle. Reset whenever a battle ends (PlayCard.js
+    // calls resetBattleUsage() from its endBattle()).
+    const usedThisBattle = new Set();
+
+    function resetBattleUsage() {
+        usedThisBattle.clear();
+    }
+
+    // One monster turn inside an active play-card battle: scan every
+    // (monster-hand card x player-owned field card) pair for a valid
+    // attack and execute a random one. Called by PlayCard.js after every
+    // successful player attack.
+    function runBattleTurn() {
+        if (!window.GamePlay || !window.GameActions) return;
+        if (typeof GamePlay.isActive !== "function" || !GamePlay.isActive()) return;
+        if (typeof getShapeForCard !== "function") return;
+
+        const monsterHand = GameActions.getMonsterHand()
+            .filter((id) => !usedThisBattle.has(id));
+        const playerFieldCards = Array.from(
+            document.querySelectorAll(".monster-field .card[data-owner='player']")
+        );
+
+        const pairs = [];
+        for (const monCardId of monsterHand) {
+            const monShape = getShapeForCard(monCardId);
+            for (const playerEl of playerFieldCards) {
+                const playerCardId = Number(playerEl.dataset.cardId);
+                const playerShape  = playerEl.dataset.shape;
+                if (GamePlay.canBeat(monShape, monCardId, playerShape, playerCardId)) {
+                    pairs.push({ monCardId, monShape, playerEl, playerCardId, playerShape });
+                }
+            }
+        }
+
+        if (pairs.length === 0) {
+            // Monster passes. The player keeps going until they also can't.
+            GameActions.showPopup("I can't take any this round.");
+            setTimeout(() => {
+                if (typeof GamePlay.isActive !== "function" || !GamePlay.isActive()) return;
+                if (!GamePlay.playerHasValidPlay()) {
+                    GameActions.showPopup("Neither of you can take any more.\nBattle over.");
+                    setTimeout(GamePlay.endBattle, 1500);
+                    return;
+                }
+                GamePlay.refreshFieldTargets();
+            }, 1200);
+            return;
+        }
+
+        const choice = pairs[Math.floor(Math.random() * pairs.length)];
+        executeBattleAttack(choice);
+    }
+
+    function executeBattleAttack({ monCardId, playerEl, playerCardId }) {
+        console.log(`[ai-brain] Monster card ${monCardId} took player ${playerCardId} from field`);
+
+        // Mark this monster card as used for the rest of the battle.
+        usedThisBattle.add(monCardId);
+
+        // Reveal the corresponding slot if it was still hidden, then grey
+        // it out so the player can see which monster card was spent.
+        let slot = document.querySelector(
+            `.monster-box .slot[data-card-id="${monCardId}"]`
+        );
+        if (!slot && typeof GameActions.revealHiddenSlotForCard === "function") {
+            slot = GameActions.revealHiddenSlotForCard(monCardId);
+        }
+        if (slot) slot.classList.add("used");
+
+        // No swap: the monster's hand card STAYS in the monster's hand. Only
+        // the player's field card leaves the field and joins the monster's hand.
+        playerEl.remove();
+        const newSlot = GameActions.addToMonsterHand(playerCardId);
+
+        // The card the monster just took also goes grey for this battle —
+        // it can't be played by the monster in the same round.
+        if (newSlot) newSlot.classList.add("used");
+        usedThisBattle.add(playerCardId);
+
+        // Successful monster move — reset speed-up counter so the timer
+        // returns to its slow 3s state.
+        if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+            GameTurnTimer.resetPlayerCounter();
+        }
+
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
+
+        // Special-triangle bonus for the monster: if the attacker is a
+        // special triangle, the monster auto-takes one higher-suit
+        // (circle/square) field card.
+        const monShape = getShapeForCard(monCardId);
+        if (
+            monShape === "triangle" &&
+            typeof isSpecialCard === "function" &&
+            isSpecialCard(monCardId)
+        ) {
+            const bonusTargets = document.querySelectorAll(
+                ".monster-field .card[data-shape='circle'], .monster-field .card[data-shape='square']"
+            );
+            if (bonusTargets.length > 0) {
+                const pick = bonusTargets[Math.floor(Math.random() * bonusTargets.length)];
+                const bonusId = Number(pick.dataset.cardId);
+                pick.remove();
+                GameActions.addToMonsterHand(bonusId);
+                GameActions.showPopup(`Bonus take! Monster also grabbed card #${bonusId}.`);
+                console.log(`[ai-brain] Monster bonus take: card ${bonusId}`);
+            }
+        }
+
+        setTimeout(() => {
+            if (typeof GamePlay.isActive !== "function" || !GamePlay.isActive()) return;
+            // After the monster's attack, see if the player still has any
+            // valid play. If not, end the battle gracefully.
+            if (!GamePlay.playerHasValidPlay()) {
+                GameActions.showPopup("You have nothing left to play.\nBattle over.");
+                setTimeout(GamePlay.endBattle, 1500);
+                return;
+            }
+            GamePlay.refreshFieldTargets();   // monster's new card is a target now
+        }, 700);
+    }
+
+    // -------- Player places a card (Play Card, no attack) --------
+    // Fires right after the player lays a card onto the field via the
+    // "Place Card" button. Weighs the monster's hand against every
+    // player-owned field card (the one just placed, plus anything
+    // already there):
+    //   - If any monster card can beat one (same suit-hierarchy rule as
+    //     GamePlay.canBeat): it stacks that card on top of the target,
+    //     then both cards return to the monster's hand. The stack/hold/
+    //     fly visuals live in Start Game AI_brain Animations.js.
+    //   - If nothing can beat anything: the monster gives up one of its
+    //     own cards straight into the player's hand (not the field).
+    //
+    // While the beat is in progress, the target is "contested" (see
+    // claimContest/resolveContest below) — Start Game TugOfWar.js lets
+    // the player click it to fight for the card instead of losing it
+    // automatically once the animation finishes.
+    function onPlayerPlacedCard() {
+        if (!window.GameActions || !window.GamePlay || typeof getShapeForCard !== "function") return;
+
+        const monsterHand = GameActions.getMonsterHand();
+        if (monsterHand.length === 0) return;   // nothing to react with
+
+        const fieldTargets = Array.from(
+            document.querySelectorAll(".monster-field .card[data-owner='player']")
+        );
+
+        const pairs = [];
+        for (const monCardId of monsterHand) {
+            const monShape = getShapeForCard(monCardId);
+            for (const target of fieldTargets) {
+                const targetId    = Number(target.dataset.cardId);
+                const targetShape = target.dataset.shape;
+                if (GamePlay.canBeat(monShape, monCardId, targetShape, targetId)) {
+                    pairs.push({ monCardId, target, targetId });
+                }
+            }
+        }
+
+        if (pairs.length === 0) {
+            giveUpCardToPlayer();
+            return;
+        }
+
+        const choice = pairs[Math.floor(Math.random() * pairs.length)];
+        beatFieldCard(choice);
+    }
+
+    // Can't beat anything on the field — hand one random monster card
+    // straight to the player instead of placing it on the field. Nothing
+    // touches the field here, so there's no need to refresh field targets.
+    function giveUpCardToPlayer() {
+        const monsterHand = GameActions.getMonsterHand();
+        if (monsterHand.length === 0) return;
+
+        const cardId = monsterHand[Math.floor(Math.random() * monsterHand.length)];
+        GameActions.removeFromMonsterHand(cardId);
+        GameActions.dropMonsterSlot(cardId);
+        GameActions.addCardToPlayerHand(cardId);
+        GameActions.showPopup(`Monster can't beat your card — it gives up card #${cardId} to you.`);
+    }
+
+    // The field card currently being contested (at most one at a time —
+    // matches the rest of this file's one-thing-happens-at-a-time model).
+    // Set in beatFieldCard(), read/cleared by claimContest()/resolveContest().
+    let activeContest = null;
+
+    // Beats one of the player's field cards: places the winning monster
+    // card on the field, tags the target "contested" (see claimContest()
+    // below), then runs the stack/hold/fly animation. If nothing claims
+    // it first, autoResolve() runs once the animation finishes and both
+    // cards join the monster's hand — the normal, uncontested outcome.
+    function beatFieldCard({ monCardId, target, targetId }) {
+        // Pull the attacker out of the monster's hand/box — it's about to
+        // appear on the field.
+        GameActions.removeFromMonsterHand(monCardId);
+        GameActions.dropMonsterSlot(monCardId);
+        GameActions.placeCardOnField(monCardId, "monster");
+
+        const attackerEl = document.querySelector(
+            `.monster-field .card[data-owner='monster'][data-card-id="${monCardId}"]`
+        );
+
+        target.classList.add("contested");
+        activeContest = { monCardId, attackerEl, target, targetId, resolved: false, anim: null };
+
+        const autoResolve = () => {
+            if (!activeContest || activeContest.resolved) return;   // already claimed by a tug-of-war
+            activeContest.resolved = true;
+            resolveContest("monster");
+        };
+
+        if (attackerEl && window.GameAIAnimations && typeof GameAIAnimations.playBeatSequence === "function") {
+            activeContest.anim = GameAIAnimations.playBeatSequence(attackerEl, target, autoResolve);
+        } else {
+            autoResolve();
+        }
+    }
+
+    // Called by Start Game TugOfWar.js when the player clicks a
+    // ".contested" card. Cancels the pending automatic capture and hands
+    // the contest's details back so the tug-of-war can run. Returns null
+    // if there's nothing to claim (stale click, already resolved, etc.).
+    function claimContest(cardEl) {
+        if (!activeContest || activeContest.resolved || activeContest.target !== cardEl) return null;
+        activeContest.resolved  = true;
+        activeContest.wasClaimed = true;   // so resolveContest() knows this went through a tug-of-war
+        if (activeContest.anim && typeof activeContest.anim.cancel === "function") {
+            activeContest.anim.cancel();
+        }
+        return {
+            monCardId:  activeContest.monCardId,
+            attackerEl: activeContest.attackerEl,
+            target:     activeContest.target,
+            targetId:   activeContest.targetId,
+        };
+    }
+
+    // Settles the current contest. winner is "player" (the tug-of-war was
+    // won, or the card just resolved uncontested — see below) or "monster".
+    //   - "player":  the target returns to the player's hand; the
+    //                monster's attacking card retreats to its own hand.
+    //   - "monster": both cards join the monster's hand (the normal
+    //                uncontested outcome, or a tug-of-war the monster won).
+    function resolveContest(winner) {
+        if (!activeContest) return;
+        const { monCardId, attackerEl, target, targetId, wasClaimed } = activeContest;
+        activeContest = null;
+
+        if (target && target.isConnected) target.remove();
+        if (attackerEl && attackerEl.isConnected) attackerEl.remove();
+
+        if (winner === "player") {
+            // Only reachable via a won tug-of-war — the automatic path
+            // always resolves "monster".
+            GameActions.addCardToPlayerHand(targetId);
+            GameActions.addToMonsterHand(monCardId);
+            GameActions.showPopup(`You pulled card #${targetId} back into your hand!`);
+        } else {
+            GameActions.addToMonsterHand(monCardId);
+            GameActions.addToMonsterHand(targetId);
+            if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+                GameTurnTimer.resetPlayerCounter();
+            }
+            GameActions.showPopup(
+                wasClaimed
+                    ? `Monster won the tug-of-war and took both #${monCardId} and #${targetId}.`
+                    : `Monster beat your card #${targetId} with #${monCardId}\nand took both back into its hand.`
+            );
+        }
+
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
+        refreshIfBattleActive();
+    }
+
+    function refreshIfBattleActive() {
+        if (window.GamePlay && typeof GamePlay.isActive === "function" && GamePlay.isActive()) {
+            GamePlay.refreshFieldTargets();
+        }
+    }
+
+    // -------- Idle-timeout auto actions --------
+    // Fired by TurnTimer.js when the player doesn't act before the
+    // decision timer fills.
+
+    // Tries a suit-hierarchy attack against any player-owned field card.
+    // Returns true if it found and executed one, false otherwise (caller
+    // falls back to idleGamble()).
+    function tryIdlePlayCard() {
+        if (!window.GameActions || !window.GamePlay) return false;
+        if (typeof getShapeForCard !== "function") return false;
+
+        const monsterHand = GameActions.getMonsterHand();
+        const playerFieldCards = Array.from(
+            document.querySelectorAll(".monster-field .card[data-owner='player']")
+        );
+        if (monsterHand.length === 0 || playerFieldCards.length === 0) return false;
+
+        // Find a valid (monster hand card x player-owned field card) attack pair.
+        for (const monCardId of monsterHand) {
+            const monShape = getShapeForCard(monCardId);
+            for (const playerEl of playerFieldCards) {
+                const playerCardId = Number(playerEl.dataset.cardId);
+                const playerShape  = playerEl.dataset.shape;
+                if (GamePlay.canBeat(monShape, monCardId, playerShape, playerCardId)) {
+                    // Execute the take. No swap — the monster's hand card
+                    // stays in its hand; only the player's field card moves.
+                    playerEl.remove();
+                    GameActions.addToMonsterHand(playerCardId);
+                    GameActions.showPopup(
+                        `Time's up! Monster played a card\nand took your #${playerCardId} from the field.`
+                    );
+                    if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+                        GameTurnTimer.resetPlayerCounter();
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;     // no valid attack — caller will fall back to gamble
+    }
+
+    // When the monster auto-gambles, it "guesses" 50/50:
+    //   - Correct guess  -> takes a random card from the player's hand onto
+    //                       the playing field (added as player-owned so the
+    //                       player can later try to reclaim it).
+    //   - Wrong guess    -> plays one of the monster's own cards to the
+    //                       playing field as monster-owned (the old fallback).
+    function idleGamble() {
+        if (!window.GameActions) return;
+
+        const guessedCorrectly = Math.random() < 0.5;
+
+        if (guessedCorrectly) {
+            // Try to take a player hand card to the field. Exclude special
+            // bonus cards (they're visual trophies, not game cards) and any
+            // card mid losing-animation.
+            const playerCards = document.querySelectorAll(
+                ".hand .card:not(.losing):not(.special-bonus-card)"
+            );
+            if (playerCards.length > 0) {
+                const target = playerCards[Math.floor(Math.random() * playerCards.length)];
+                const cardId = Number(target.dataset.cardId);
+                target.classList.add("losing");
+                setTimeout(() => target.remove(), 350);
+                // Card lands on field shortly after, owned by the player (so
+                // they can still reclaim it during a Play Card battle).
+                setTimeout(() => GameActions.placeCardOnField(cardId, "player"), 250);
+                GameActions.showPopup(
+                    `Time's up! Monster gambled correctly\nand took your card #${cardId} onto the field.`
+                );
+                if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+                    GameTurnTimer.resetPlayerCounter();
+                }
+                return;
+            }
+            // No player hand cards left — fall through to placing own card.
+        }
+
+        // Wrong guess (or no player hand cards): place a monster card on field.
+        const monsterHand = GameActions.getMonsterHand();
+        if (monsterHand.length === 0) {
+            GameActions.showPopup("Time's up! Monster has nothing to play.");
+            return;
+        }
+        const cardId = monsterHand[Math.floor(Math.random() * monsterHand.length)];
+        GameActions.removeFromMonsterHand(cardId);
+        GameActions.dropMonsterSlot(cardId);
+        GameActions.placeCardOnField(cardId, "monster");
+        GameActions.showPopup(
+            `Time's up! Monster gambled and played card #${cardId} onto the field.`
+        );
+    }
+
+    // -------- Public API --------
+    window.GameAI = {
+        pickGambleCard,
+        runBattleTurn,
+        resetBattleUsage,
+        onPlayerPlacedCard,
+        tryIdlePlayCard,
+        idleGamble,
+        // Used by Start Game TugOfWar.js to hijack a contested card.
+        claimContest,
+        resolveContest,
+    };
+
+})();

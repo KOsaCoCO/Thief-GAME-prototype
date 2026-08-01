@@ -59,6 +59,10 @@
         <!-- "End Battle" button — shown only while a play-card battle is active. -->
         <button class="end-battle-btn" id="end-battle-btn" type="button">End Battle</button>
 
+        <!-- "Place Card" button — shown while a hand card is armed during a
+             play-card battle; lays the armed card onto the field. -->
+        <button class="place-card-btn" id="place-card-btn" type="button">Place Card</button>
+
         <!-- Bonus action button — appears on the left side of the screen
              whenever the monster has cards but no suit overlap with the
              player's hand (i.e. neither side can attack the other via
@@ -113,6 +117,19 @@
     <!-- Play-card flow (target selection + suit hierarchy). Also safe to
          delete; without it the Play Card button just does nothing. -->
     <script src="Start Game PlayCard.js"></script>
+    <!-- The monster's "brain" — every decision the monster makes (which
+         card to reveal, whether to attack, idle-timeout free actions)
+         lives here. Safe to delete — the monster just stops acting on
+         its own; everything else keeps working. -->
+    <script src="Start Game AI_brain.js"></script>
+    <!-- Pure visual choreography for the AI brain's moves (card stack /
+         hold / fly). Safe to delete — AI_brain.js's moves just resolve
+         instantly without the animation, no game logic depends on it. -->
+    <script src="Start Game AI_brain Animations.js"></script>
+    <!-- Tug-of-war card action: lets the player contest a card the
+         monster is mid-animation of taking. Safe to delete — a
+         contested card just gets taken automatically instead. -->
+    <script src="Start Game TugOfWar.js"></script>
     <!-- Initial setup: "pick 2 challenge cards" modal at game start. Safe
          to delete — without it the game just starts with empty field. -->
     <script src="Start Game Setup.js"></script>

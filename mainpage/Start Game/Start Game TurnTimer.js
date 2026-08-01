@@ -11,18 +11,16 @@
 //   - When an action finishes (battle ends, gamble resolves,
 //     choice modal cancelled) -> timer restarts.
 //
-// If the slider fills before the player clicks anything, the
-// monster takes one of two free actions, picked at random:
-//
-//   - "GAMBLE"     -> the monster plays a random card from its
-//                     hand to the playing field as monster-owned;
-//                     its slot disappears from the box.
-//   - "PLAY CARD"  -> the monster tries to take a player-owned
-//                     field card using the suit hierarchy. If no
-//                     valid attack exists, it falls back to GAMBLE.
+// If the slider fills before the player clicks anything, the monster
+// gets a free turn: "gamble" or "play card", picked at random here —
+// but WHAT each of those actually does is decided in
+// Start Game AI_brain.js (GameAI.tryIdlePlayCard / GameAI.idleGamble).
+// This file only owns the timer and the gamble-vs-play-vs-bonus coin flip.
 //
 // SAFE TO DELETE: removing this file and its <script> tag just
-// disables the timer — every other feature keeps working.
+// disables the timer — every other feature keeps working. (If
+// AI_brain.js is also missing, the monster simply never gets a free
+// turn — no crash.)
 // =============================================================
 
 (function () {
@@ -84,10 +82,10 @@
     // -------- Public start/stop --------
     //
     // start() is gated only by body-class flags set by full-screen modes
-    // (playcard-mode, bonus-mode, special-battle-mode). Each mode adds
-    // its own class on entry and strips it on exit — reading directly
-    // from the class list means we can't wedge on a stale JS isActive()
-    // flag the way the old GameBonusAction.isActive() check could.
+    // (playcard-mode, bonus-mode, special-battle-mode, tug-mode). Each
+    // mode adds its own class on entry and strips it on exit — reading
+    // directly from the class list means we can't wedge on a stale JS
+    // isActive() flag the way the old GameBonusAction.isActive() check could.
     //
     // An optional opts arg is accepted (legacy { force: true } from older
     // call sites) but ignored.
@@ -103,6 +101,7 @@
         if (cls.contains("playcard-mode"))      return;
         if (cls.contains("bonus-mode"))         return;
         if (cls.contains("special-battle-mode")) return;
+        if (cls.contains("tug-mode"))            return;
 
         if (checkMonsterDefeat()) return; // just check now in case we missed it
         if (running) stop();              // restart cleanly if already running
@@ -201,9 +200,16 @@
                         // BonusAction's popup OK callback handles cleanup
         }
 
+        // The actual decisions (which card, attack vs gamble, etc.) live in
+        // Start Game AI_brain.js — this file only decides WHEN the monster
+        // gets a free turn, not WHAT it does with it.
         const wantsPlay = (choice === "play");
-        if (!(wantsPlay && tryMonsterPlayCard())) {
-            monsterGamble();
+        const playedCard = wantsPlay
+            && window.GameAI
+            && typeof GameAI.tryIdlePlayCard === "function"
+            && GameAI.tryIdlePlayCard();
+        if (!playedCard && window.GameAI && typeof GameAI.idleGamble === "function") {
+            GameAI.idleGamble();
         }
 
         // After the monster's free action, give the player a brief beat
@@ -228,92 +234,6 @@
                 start();
             }, 600);
         }, 1400);
-    }
-
-    // -------- Monster auto-actions --------
-
-    function tryMonsterPlayCard() {
-        if (!window.GameActions || !window.GamePlay) return false;
-        if (typeof getShapeForCard !== "function") return false;
-
-        const monsterHand = GameActions.getMonsterHand();
-        const playerFieldCards = Array.from(
-            document.querySelectorAll(".monster-field .card[data-owner='player']")
-        );
-        if (monsterHand.length === 0 || playerFieldCards.length === 0) return false;
-
-        // Find a valid (monster hand card × player-owned field card) attack pair.
-        for (const monCardId of monsterHand) {
-            const monShape = getShapeForCard(monCardId);
-            for (const playerEl of playerFieldCards) {
-                const playerCardId = Number(playerEl.dataset.cardId);
-                const playerShape  = playerEl.dataset.shape;
-                if (GamePlay.canBeat(monShape, monCardId, playerShape, playerCardId)) {
-                    // Execute the take. No swap — the monster's hand card
-                    // stays in its hand; only the player's field card moves.
-                    playerEl.remove();
-                    GameActions.addToMonsterHand(playerCardId);
-                    GameActions.showPopup(
-                        `Time's up! Monster played a card\nand took your #${playerCardId} from the field.`
-                    );
-                    // Successful monster move — reset speed-up counter.
-                    resetPlayerCounter();
-                    return true;
-                }
-            }
-        }
-        return false;     // no valid attack — caller will fall back to gamble
-    }
-
-    // When the monster auto-gambles, it "guesses" 50/50:
-    //   - Correct guess  -> takes a random card from the player's hand onto
-    //                       the playing field (added as player-owned so the
-    //                       player can later try to reclaim it).
-    //   - Wrong guess    -> plays one of the monster's own cards to the
-    //                       playing field as monster-owned (the old fallback).
-    function monsterGamble() {
-        if (!window.GameActions) return;
-
-        const guessedCorrectly = Math.random() < 0.5;
-
-        if (guessedCorrectly) {
-            // Try to take a player hand card to the field. Exclude special
-            // bonus cards (they're visual trophies, not game cards) and any
-            // card mid losing-animation.
-            const playerCards = document.querySelectorAll(
-                ".hand .card:not(.losing):not(.special-bonus-card)"
-            );
-            if (playerCards.length > 0) {
-                const target = playerCards[Math.floor(Math.random() * playerCards.length)];
-                const cardId = Number(target.dataset.cardId);
-                target.classList.add("losing");
-                setTimeout(() => target.remove(), 350);
-                // Card lands on field shortly after, owned by the player (so
-                // they can still reclaim it during a Play Card battle).
-                setTimeout(() => GameActions.placeCardOnField(cardId, "player"), 250);
-                GameActions.showPopup(
-                    `Time's up! Monster gambled correctly\nand took your card #${cardId} onto the field.`
-                );
-                // Successful monster move — reset speed-up counter.
-                resetPlayerCounter();
-                return;
-            }
-            // No player hand cards left — fall through to placing own card.
-        }
-
-        // Wrong guess (or no player hand cards): place a monster card on field.
-        const monsterHand = GameActions.getMonsterHand();
-        if (monsterHand.length === 0) {
-            GameActions.showPopup("Time's up! Monster has nothing to play.");
-            return;
-        }
-        const cardId = monsterHand[Math.floor(Math.random() * monsterHand.length)];
-        GameActions.removeFromMonsterHand(cardId);
-        GameActions.dropMonsterSlot(cardId);
-        GameActions.placeCardOnField(cardId, "monster");
-        GameActions.showPopup(
-            `Time's up! Monster gambled and played card #${cardId} onto the field.`
-        );
     }
 
     // -------- Monster defeat --------

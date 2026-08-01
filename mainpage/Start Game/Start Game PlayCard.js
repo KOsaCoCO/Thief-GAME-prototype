@@ -10,31 +10,33 @@
 // scene, hand, monster, etc. all keep working.
 //
 // ---- Flow ----
-//   Entry condition: the playing field must have at least one
-//   monster-owned card. (Those come from earlier Gamble wins.)
+//   Entry condition: none. Play Card always enters battle mode, even
+//   if the field is still empty — the player can just place a card.
 //
 //   Mode persists across multiple plays until the player ends it
-//   (Esc / "End Battle" button), or there is nothing the player can do.
+//   (Esc / "End Battle" button), or their hand runs out of unused cards.
 //
-//   PLAYER TURN:
-//     - Click a hand card to ARM it (it stays in the hand, highlighted).
-//     - Click a monster-owned field card to attack with the armed card.
-//       Suit hierarchy decides:
+//   PLAYER TURN — click a hand card to ARM it (stays in hand, highlighted),
+//   then choose one of two actions:
+//     - PLACE: click "Place Card" to lay the armed card onto the field
+//       as a player-owned card. Always available, even on an empty field.
+//       Hands off to GameAI.onPlayerPlacedCard() (Start Game AI_brain.js),
+//       which decides whether the monster can beat it.
+//     - ATTACK: click a field card (player's own or the monster's) to
+//       attack with the armed card. Suit hierarchy decides:
 //         * Square beats anything (same-suit needs higher number).
 //         * Circle beats circle (higher number) and triangle (any).
 //         * Triangle only beats triangle (higher number).
-//     - On success: target moves to the player's hand, attacker moves
-//       to the field as a player-owned card.
-//     - On failure: popup explains why; the armed card stays in hand.
+//     - On attack success: target moves to the player's hand, attacker
+//       stays in hand (marked used for the battle).
+//     - On attack failure: popup explains why; the armed card stays armed.
 //
 //   MONSTER TURN (auto, after every successful player attack):
-//     - Scans every (monster-hand card × player-owned field card)
-//       pair for a valid attack.
-//     - If found: executes a random one — the player's field card
-//       goes to the monster's hand (a new slot appears in the box),
-//       and the monster's hand card lands on the field as monster-owned.
-//     - If none: popup "I can't take any this round." Control returns
-//       to the player, who can keep trying.
+//     - The decision + execution live in Start Game AI_brain.js
+//       (GameAI.runBattleTurn) — this file only triggers it and
+//       exposes the bits AI_brain needs (refreshFieldTargets,
+//       playerHasValidPlay, endBattle, canBeat, isActive) via
+//       window.GamePlay.
 //
 //   END BATTLE:
 //     - Player clicks "End Battle" or presses Escape.
@@ -49,12 +51,6 @@
     let battleActive      = false;
     let bonusPickPending  = false;  // waiting for the player to pick a bonus higher-suit card
 
-    // Card IDs the MONSTER has already used as an attacker during the
-    // current battle. Reset on endBattle. Used to keep monster turns from
-    // reusing the same hand card within one battle (mirroring the .used
-    // restriction on player hand cards).
-    const monsterUsedThisBattle = new Set();
-
     // -------- Entry / exit --------
 
     function enterPlayMode(cardEl, onDone) {
@@ -64,25 +60,9 @@
             return;
         }
 
-        // There has to be SOMETHING on the field to take — own cards count
-        // (free reclaim) and monster cards count (suit-hierarchy attack).
-        const fieldCards = document.querySelectorAll(".monster-field .card[data-owner]");
-        if (fieldCards.length === 0) {
-            GameActions.showPopup(
-                "Nothing is on the playing field yet."
-            );
-            if (onDone) onDone();
-            return;
-        }
-
-        if (!playerHasValidPlay()) {
-            GameActions.showPopup(
-                "None of your cards can beat what's on the field.\nTry gambling instead."
-            );
-            if (onDone) onDone();
-            return;
-        }
-
+        // No entry gate: the field may be empty and the player may have
+        // nothing to beat yet — Place Card is always available, so the
+        // player can always do something once they're in.
         onDoneCallback = onDone;
         battleActive   = true;
 
@@ -126,6 +106,10 @@
             endBtn.addEventListener("click", onEndBattleClick);
         }
 
+        const placeBtn = document.getElementById("place-card-btn");
+        if (placeBtn) placeBtn.addEventListener("click", onPlaceCardClick);
+        updatePlaceButton();
+
         document.addEventListener("keydown", onEscape);
     }
 
@@ -149,7 +133,9 @@
         document.querySelectorAll(".monster-box .slot.used").forEach((s) => {
             s.classList.remove("used");
         });
-        monsterUsedThisBattle.clear();
+        if (window.GameAI && typeof GameAI.resetBattleUsage === "function") {
+            GameAI.resetBattleUsage();
+        }
 
         // Battle is over — strip the body guard, then restart the pressure
         // timer. Order matters: the body class has to be off BEFORE
@@ -169,6 +155,9 @@
             endBtn.removeEventListener("click", onEndBattleClick);
         }
 
+        const placeBtn = document.getElementById("place-card-btn");
+        if (placeBtn) placeBtn.removeEventListener("click", onPlaceCardClick);
+
         document.removeEventListener("keydown", onEscape);
 
         unarm();
@@ -187,11 +176,21 @@
         unarm();
         armedCardEl = cardEl;
         cardEl.classList.add("selected-for-play");
+        updatePlaceButton();
     }
 
     function unarm() {
         if (armedCardEl) armedCardEl.classList.remove("selected-for-play");
         armedCardEl = null;
+        updatePlaceButton();
+    }
+
+    // Shows/hides the "Place Card" button: only while a card is armed,
+    // the battle is active, and we're not mid-way through a bonus pick.
+    function updatePlaceButton() {
+        const btn = document.getElementById("place-card-btn");
+        if (!btn) return;
+        btn.classList.toggle("visible", battleActive && !!armedCardEl && !bonusPickPending);
     }
 
     function onHandClickInBattle(e) {
@@ -266,29 +265,12 @@
         return false;
     }
 
-    // Does the player have ANY hand card that can beat ANY monster-owned
-    // field card right now? Used to auto-end the battle once neither side
-    // can do anything.
+    // Does the player have ANY move left? Placing an unused hand card is
+    // always a valid move (even on an empty field), so this just checks
+    // whether the hand still has unused cards. Used to auto-end the battle
+    // once the player has nothing left to play at all.
     function playerHasValidPlay() {
-        // Only un-used hand cards count.
-        const handCards = document.querySelectorAll(".hand .card:not(.used)");
-        if (handCards.length === 0) return false;
-
-        // EVERY field card — whether the player's own or the monster's —
-        // requires a real suit-hierarchy + number win to be takeable.
-        const fieldCards = document.querySelectorAll(".monster-field .card[data-owner]");
-        if (fieldCards.length === 0) return false;
-
-        for (const handCard of handCards) {
-            const handId    = Number(handCard.dataset.cardId);
-            const handShape = handCard.dataset.shape;
-            for (const target of fieldCards) {
-                const targetId    = Number(target.dataset.cardId);
-                const targetShape = target.dataset.shape;
-                if (canBeat(handShape, handId, targetShape, targetId)) return true;
-            }
-        }
-        return false;
+        return document.querySelectorAll(".hand .card:not(.used)").length > 0;
     }
 
     function whyCantBeat(attShape, attN, defShape, defN) {
@@ -368,9 +350,18 @@
             isSpecialCard(playerCardId);
 
         if (attackerIsSpecialTriangle && hasHigherSuitFieldCards()) {
-            enterBonusPick(() => setTimeout(monsterTurn, 500));
+            enterBonusPick(() => setTimeout(triggerMonsterBattleTurn, 500));
         } else {
-            setTimeout(monsterTurn, 700);
+            setTimeout(triggerMonsterBattleTurn, 700);
+        }
+    }
+
+    // The monster's decision + execution for its play-card battle turn
+    // lives in Start Game AI_brain.js (GameAI.runBattleTurn) — this is
+    // just the guarded call site.
+    function triggerMonsterBattleTurn() {
+        if (window.GameAI && typeof GameAI.runBattleTurn === "function") {
+            GameAI.runBattleTurn();
         }
     }
 
@@ -378,6 +369,41 @@
         return !!document.querySelector(
             ".monster-field .card[data-shape='circle'], .monster-field .card[data-shape='square']"
         );
+    }
+
+    // -------- Player places a card --------
+    // The other half of "Play Card": lay the armed card straight onto the
+    // field as a player-owned card, no target/attack required. Always
+    // available — this is what lets the player act on an empty field.
+
+    function onPlaceCardClick(e) {
+        e.stopPropagation();
+        if (bonusPickPending) return;
+        if (!armedCardEl) return;
+        placeArmedCard();
+    }
+
+    function placeArmedCard() {
+        const cardEl = armedCardEl;
+        const cardId = Number(cardEl.dataset.cardId);
+        const shape  = cardEl.dataset.shape;
+
+        cardEl.remove();
+        GameActions.placeCardOnField(cardId, "player");
+        console.log(`[playcard] Player placed ${shape} ${cardId} on the field`);
+
+        unarm();
+        refreshFieldTargets();   // the new card is targetable like any other
+
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
+
+        // The monster's reaction to the placement lives in
+        // Start Game AI_brain.js.
+        if (window.GameAI && typeof GameAI.onPlayerPlacedCard === "function") {
+            GameAI.onPlayerPlacedCard();
+        }
     }
 
     // -------- Player bonus pick (special triangle ability) --------
@@ -426,126 +452,10 @@
         document.addEventListener("keydown", onBonusEscape);
     }
 
-    // -------- Monster turn --------
-
-    function monsterTurn() {
-        if (!battleActive) return;
-
-        const monsterHand = GameActions.getMonsterHand()
-            .filter((id) => !monsterUsedThisBattle.has(id));
-        const playerFieldCards = Array.from(
-            document.querySelectorAll(".monster-field .card[data-owner='player']")
-        );
-
-        // Find every monster-hand × player-field pair that's a valid attack.
-        const pairs = [];
-        for (const monCardId of monsterHand) {
-            const monShape = getShapeForCard(monCardId);
-            for (const playerEl of playerFieldCards) {
-                const playerCardId = Number(playerEl.dataset.cardId);
-                const playerShape  = playerEl.dataset.shape;
-                if (canBeat(monShape, monCardId, playerShape, playerCardId)) {
-                    pairs.push({ monCardId, monShape, playerEl, playerCardId, playerShape });
-                }
-            }
-        }
-
-        if (pairs.length === 0) {
-            // Monster passes. The player keeps going until they also can't.
-            GameActions.showPopup("I can't take any this round.");
-            setTimeout(() => {
-                if (!battleActive) return;
-                // Auto-end if the player has nothing left to attempt either —
-                // otherwise let them keep trying.
-                if (!playerHasValidPlay()) {
-                    GameActions.showPopup("Neither of you can take any more.\nBattle over.");
-                    setTimeout(endBattle, 1500);
-                    return;
-                }
-                refreshFieldTargets();
-            }, 1200);
-            return;
-        }
-
-        // Pick one at random.
-        const choice = pairs[Math.floor(Math.random() * pairs.length)];
-        executeMonsterAttack(choice);
-    }
-
-    function executeMonsterAttack({ monCardId, playerEl, playerCardId }) {
-        console.log(
-            `[playcard] Monster card ${monCardId} took player ${playerCardId} from field`
-        );
-
-        // Mark this monster card as used for the rest of the battle.
-        monsterUsedThisBattle.add(monCardId);
-
-        // Reveal the corresponding slot if it was still hidden, then grey
-        // it out so the player can see which monster card was spent.
-        let slot = document.querySelector(
-            `.monster-box .slot[data-card-id="${monCardId}"]`
-        );
-        if (!slot && typeof GameActions.revealHiddenSlotForCard === "function") {
-            slot = GameActions.revealHiddenSlotForCard(monCardId);
-        }
-        if (slot) slot.classList.add("used");
-
-        // No swap: the monster's hand card STAYS in the monster's hand. Only
-        // the player's field card leaves the field and joins the monster's hand.
-        playerEl.remove();
-        const newSlot = GameActions.addToMonsterHand(playerCardId);
-
-        // The card the monster just took also goes grey for this battle —
-        // it can't be played by the monster in the same round.
-        if (newSlot) newSlot.classList.add("used");
-        monsterUsedThisBattle.add(playerCardId);
-
-        // Successful monster move — reset speed-up counter so the timer
-        // returns to its slow 3s state.
-        if (window.GameTurnTimer && typeof window.GameTurnTimer.resetPlayerCounter === "function") {
-            window.GameTurnTimer.resetPlayerCounter();
-        }
-
-        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
-            GameBonusAction.update();
-        }
-
-        // Special-triangle bonus for the monster: if the attacker is a
-        // special triangle, the monster auto-takes one higher-suit
-        // (circle/square) field card.
-        const monShape = getShapeForCard(monCardId);
-        if (
-            monShape === "triangle" &&
-            typeof isSpecialCard === "function" &&
-            isSpecialCard(monCardId)
-        ) {
-            const bonusTargets = document.querySelectorAll(
-                ".monster-field .card[data-shape='circle'], .monster-field .card[data-shape='square']"
-            );
-            if (bonusTargets.length > 0) {
-                const pick = bonusTargets[Math.floor(Math.random() * bonusTargets.length)];
-                const bonusId = Number(pick.dataset.cardId);
-                pick.remove();
-                GameActions.addToMonsterHand(bonusId);
-                GameActions.showPopup(`Bonus take! Monster also grabbed card #${bonusId}.`);
-                console.log(`[playcard] Monster bonus take: card ${bonusId}`);
-            }
-        }
-
-        setTimeout(() => {
-            if (!battleActive) return;
-            // After the monster's attack, see if the player still has any
-            // valid play. If not, end the battle gracefully.
-            if (!playerHasValidPlay()) {
-                GameActions.showPopup("You have nothing left to play.\nBattle over.");
-                setTimeout(endBattle, 1500);
-                return;
-            }
-            refreshFieldTargets();         // monster's new card is a target now
-        }, 700);
-    }
-
     // -------- Public API --------
+    // Includes a few internals (refreshFieldTargets, playerHasValidPlay)
+    // exposed purely so Start Game AI_brain.js can run the monster's turn
+    // from outside this file without reaching into private state.
     window.GamePlay = {
         enterPlayMode,
         endBattle,
@@ -553,6 +463,8 @@
         // BonusAction reads this so its case-1 auto-fire doesn't
         // interrupt an in-flight play-card battle.
         isActive: () => battleActive,
+        refreshFieldTargets,
+        playerHasValidPlay,
     };
 
 })();
