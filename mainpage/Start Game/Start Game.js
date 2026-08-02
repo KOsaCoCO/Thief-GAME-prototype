@@ -4,8 +4,11 @@
 // - Renders a hand of 5 random cards at the bottom of the screen
 //
 // Card/suit definitions (TOTAL_CARDS, getShapeForCard, isSpecialCard,
-// pickSpecialTriangles) now live in Start Game CardDeck.js, which loads
-// before this file — this file just calls them like any other global.
+// getPlusCount) live in Start Game CardDeck.js, which loads before this
+// file — this file just calls them like any other global. "+" pips
+// themselves are tracked live in Start Game CardBoosters.js and are
+// only ever earned by gambling correctly (Start Game Actions.js) — no
+// card starts a game already marked.
 
 const HAND_SIZE      = 5;
 const NUM_BUFF_SLOTS = 6;
@@ -159,10 +162,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (window.GameBoosters && typeof GameBoosters.reset === "function") {
-        GameBoosters.reset();   // wipe any pluses left over from a previous game
+        GameBoosters.reset();   // no card starts with a "+" — wipe any left over from a previous game
     }
     assignCardShapes();       // must run before anything else touches a card's shape
-    pickSpecialTriangles();   // must run BEFORE renderHand so the + indicator is added
     pickRandomMonster();
     renderBuffSlots();
     renderHand();

@@ -25,7 +25,7 @@ const CARD_TYPES = [
         id: "plus",
         shape: null,
         cssClass: "special",
-        info: "A + pip on a card — any suit — grants a bonus: win an attack with it and you also take one extra Circle or Square from the field per pip. A few Triangles start each game already marked, and calling a gamble correctly marks another random card in your hand. Pips stack up to 3 on the same card."
+        info: "A + pip on a card — any suit — grants a bonus: win an attack with it and you also take one extra Circle or Square from the field per pip. No card starts with one; calling a gamble correctly marks a random card in your hand instead. Pips stack up to 3 on the same card."
     },
     {
         id: "snatch-reward",

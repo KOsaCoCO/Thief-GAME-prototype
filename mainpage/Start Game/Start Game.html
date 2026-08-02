@@ -109,9 +109,11 @@
         <div class="bonus-banner" id="bonus-banner" aria-hidden="true"></div>
     </div>
 
-    <!-- Live per-card "+" booster tracking for this session. Safe to
+    <!-- Live per-card "+" booster tracking for this session. No card
+         starts with a pip — Start Game Actions.js is the only file
+         that ever grants one, on a correct gamble call. Safe to
          delete — cards simply stop carrying pluses, everything else
-         keeps working. Loads before CardDeck.js, which seeds it. -->
+         keeps working. Loads before CardDeck.js, which reads it. -->
     <script src="Start Game CardBoosters.js"></script>
     <!-- Deck definition: how many cards exist and which suit each number
          is this game (random 50/40/10 triangle/circle/square split).

@@ -12,31 +12,32 @@
 // keeps calling them exactly as it always has. Only the numbers moved
 // here, not the contract, so nothing downstream needed to change.
 //
-// isSpecialCard()/getPlusCount() are now a thin pass-through to
-// Start Game CardBoosters.js's live per-card "+" tracking — that file
-// is the actual source of truth, this is just the familiar-named door
-// into it (see pickSpecialTriangles() below for the seeding step).
+// isSpecialCard()/getPlusCount() are a thin pass-through to Start Game
+// CardBoosters.js's live per-card "+" tracking — that file is the
+// actual source of truth. No card starts a game with a pip: the ONLY
+// way to earn one is a correct gamble call (Start Game Actions.js's
+// awardGambleBoosterPip(), which calls GameBoosters.addPlus() itself).
+// This file never grants pips — it only ever reads them.
 //
 // SEPARATE on purpose: delete this file + its <script> tag and only
 // the deck definition goes with it — every caller already guards with
 // `typeof getShapeForCard === "function"` / `typeof isSpecialCard ===
 // "function"`, so the rest of the game degrades instead of crashing.
 //
-// Must load BEFORE Start Game.js — its DOMContentLoaded handler calls
-// assignCardShapes() and pickSpecialTriangles() from here. Should also
-// load AFTER Start Game CardBoosters.js so pickSpecialTriangles() has
-// something to seed pluses into (guarded either way).
+// Load hierarchy: Start Game CardBoosters.js -> Start Game CardDeck.js
+// (this file) -> Start Game.js -> Start Game Actions.js. Must load
+// BEFORE Start Game.js — its DOMContentLoaded handler calls
+// assignCardShapes() from here.
 // =============================================================
 
-const TOTAL_CARDS         = 60;
-const SPECIAL_TRIANGLES_N = 5;
+const TOTAL_CARDS = 60;
 
 // Suit split applied to the 60 numbers, freshly shuffled each game.
 const SUIT_SHARE = { triangle: 0.5, circle: 0.4, square: 0.1 };
 
 // Card ID -> shape ("circle" | "square" | "triangle"), filled in by
-// assignCardShapes() before anything else (hand render, monster draw,
-// special-triangle picks) touches a card.
+// assignCardShapes() before anything else (hand render, monster draw)
+// touches a card.
 const CARD_SHAPES = new Map();
 
 // Shuffles 1..TOTAL_CARDS and hands out shapes by SUIT_SHARE using
@@ -80,24 +81,4 @@ function getPlusCount(cardId) {
 
 function isSpecialCard(cardId) {
     return getPlusCount(cardId) > 0;
-}
-
-// Picks SPECIAL_TRIANGLES_N random triangle card IDs and gives each one
-// its starting "+" pip for this game session, via GameBoosters — so a
-// handful of triangles start the game already marked. Must run AFTER
-// assignCardShapes() (needs real shapes) and GameBoosters.reset().
-function pickSpecialTriangles() {
-    if (!window.GameBoosters || typeof GameBoosters.addPlus !== "function") return;
-
-    const triangles = [];
-    for (let i = 1; i <= TOTAL_CARDS; i++) {
-        if (getShapeForCard(i) === "triangle") triangles.push(i);
-    }
-    for (let i = triangles.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [triangles[i], triangles[j]] = [triangles[j], triangles[i]];
-    }
-    const picked = triangles.slice(0, Math.min(SPECIAL_TRIANGLES_N, triangles.length));
-    picked.forEach((id) => GameBoosters.addPlus(id));
-    console.log("Starting + triangles this game:", picked.sort((a, b) => a - b));
 }
