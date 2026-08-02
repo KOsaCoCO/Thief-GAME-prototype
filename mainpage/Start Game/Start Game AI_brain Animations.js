@@ -6,9 +6,16 @@
 // calls in with the elements involved and a callback; this file
 // never touches monsterHand, the box, or any bridge API itself.
 //
-// SAFE TO DELETE: without this file, AI_brain.js's beat sequence
-// just resolves instantly (no stack/fly visuals) — the game logic
-// is unaffected either way.
+// Two families of visuals live here:
+//   - playBeatSequence(): the "monster beats a placed card" stack/
+//     hold/fly sequence (contested by Start Game TugOfWar.js).
+//   - showFlashyText()/flyCardToElement()/jumpSlot(): smaller pieces
+//     used by AI_brain.js's idleGamble() to show what the monster's
+//     free idle-timeout gamble is doing.
+//
+// SAFE TO DELETE: without this file, AI_brain.js's beat sequence and
+// idle-gamble both just resolve instantly (no visuals) — the game
+// logic is unaffected either way.
 // =============================================================
 
 (function () {
@@ -104,9 +111,85 @@
         cardEl.style.opacity    = "0.35";
     }
 
+    // -------- Idle-timeout gamble visuals --------
+    // Used by AI_brain.js's idleGamble() — the flashy "monster is
+    // gambling" banner, and the two card-movement flights (player's
+    // card zooming toward the monster on a correct guess; the monster's
+    // revealed card slipping into the player's hand on a wrong one).
+
+    // A short pulsing banner below the monster sprite, 10px under its
+    // bottom edge. Purely decorative — caller owns removing it (also
+    // auto-removes itself after durationMs as a safety net).
+    function showFlashyText(message, durationMs) {
+        const monster = document.getElementById("monster");
+        if (!monster) return;
+
+        const rect = monster.getBoundingClientRect();
+        const el = document.createElement("div");
+        el.className = "ai-flashy-text";
+        el.textContent = message;
+        el.style.top  = (rect.bottom + 10) + "px";
+        el.style.left = (rect.left + rect.width / 2) + "px";
+        document.body.appendChild(el);
+
+        setTimeout(() => el.remove(), durationMs);
+    }
+
+    // Flies any element toward the center of another element, shrinking
+    // and fading as it goes — the same "fly and shrink" motion as
+    // flyToBox() above, just aimed at an arbitrary target instead of
+    // always the monster box. Calls onComplete when the flight ends;
+    // the element itself is left in place (faded out) for the caller to
+    // remove or repurpose.
+    function flyCardToElement(el, targetEl, durationMs, onComplete) {
+        if (!el || !targetEl) {
+            if (onComplete) onComplete();
+            return;
+        }
+
+        const elRect     = el.getBoundingClientRect();
+        const targetRect = targetEl.getBoundingClientRect();
+        const dx = (targetRect.left + targetRect.width  / 2) - (elRect.left + elRect.width  / 2);
+        const dy = (targetRect.top  + targetRect.height / 2) - (elRect.top  + elRect.height / 2);
+
+        el.style.position   = el.style.position || "relative";
+        el.style.zIndex     = "300";
+        el.style.transition = `transform ${durationMs}ms cubic-bezier(0.45, 0, 0.55, 1), opacity ${durationMs}ms ease`;
+        void el.offsetWidth;   // force reflow so the transition applies
+        el.style.transform  = `translate(${dx}px, ${dy}px) scale(0.25)`;
+        el.style.opacity    = "0.2";
+
+        setTimeout(() => { if (onComplete) onComplete(); }, durationMs);
+    }
+
+    // The same "reveal + jump" beat a monster-box slot does when a card
+    // is played during the player's own gamble (see Start Game
+    // Actions.js's monsterPlaysCard/animateJump) — reimplemented here so
+    // this file doesn't reach into Actions.js's private internals. Reuses
+    // the existing .jumping CSS animation (Start Game.css).
+    function jumpSlot(slotEl, durationMs, onComplete) {
+        if (!slotEl) {
+            if (onComplete) onComplete();
+            return;
+        }
+        slotEl.classList.add("jumping");
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            slotEl.classList.remove("jumping");
+            if (onComplete) onComplete();
+        };
+        slotEl.addEventListener("animationend", finish, { once: true });
+        setTimeout(finish, durationMs);
+    }
+
     // -------- Public API --------
     window.GameAIAnimations = {
         playBeatSequence,
+        showFlashyText,
+        flyCardToElement,
+        jumpSlot,
     };
 
 })();

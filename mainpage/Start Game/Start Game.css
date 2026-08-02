@@ -1187,6 +1187,31 @@ body.snatch-penalty .monster-field .card {
     50%      { transform: rotate(5deg); }
 }
 
+/* -------- AI brain: idle-gamble "announce" banner --------
+   Built by Start Game AI_brain Animations.js's showFlashyText(), which
+   sets top/left inline (10px below the monster sprite's bottom edge);
+   everything else — the look, the pulse — lives here. */
+.ai-flashy-text {
+    position: fixed;
+    transform: translateX(-50%);
+    padding: 10px;
+    background-color: rgba(20, 20, 20, 0.85);
+    color: #f1c40f;
+    font-weight: bold;
+    font-size: 1.1rem;
+    border: 2px solid #f1c40f;
+    border-radius: 8px;
+    white-space: nowrap;
+    z-index: 250;
+    pointer-events: none;
+    animation: aiFlashyPulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes aiFlashyPulse {
+    from { transform: translateX(-50%) scale(1);    box-shadow: 0 0 10px rgba(241, 196, 15, 0.6); }
+    to   { transform: translateX(-50%) scale(1.06); box-shadow: 0 0 22px rgba(241, 196, 15, 1); }
+}
+
 /* -------- Special bonus card (awarded after a bonus round) --------
    Always shown sleeve-side up with a large cross (no number). Shimmers
    dark red. The MONSTER variant lives in the buff-slot box and has a

@@ -82,6 +82,13 @@
         armCard(cardEl);
 
         startBattle();
+
+        // Once per session (not per click): the monster gets a small
+        // chance to snatch a field card while the player's deciding.
+        // Decision lives in Start Game AI_brain.js.
+        if (window.GameAI && typeof GameAI.tryBattleSnatch === "function") {
+            GameAI.tryBattleSnatch();
+        }
     }
 
     function startBattle() {

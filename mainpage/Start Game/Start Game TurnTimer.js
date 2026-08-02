@@ -210,32 +210,45 @@
             && window.GameAI
             && typeof GameAI.tryIdlePlayCard === "function"
             && GameAI.tryIdlePlayCard();
-        if (!playedCard && window.GameAI && typeof GameAI.idleGamble === "function") {
-            GameAI.idleGamble();
+
+        if (playedCard) {
+            // Instant, synchronous — same fixed pacing delay as always.
+            setTimeout(afterFreeAction, 1400);
+        } else if (window.GameAI && typeof GameAI.idleGamble === "function") {
+            // idleGamble() now runs its own multi-second animation (see
+            // Start Game AI_brain.js) before actually changing any state —
+            // waiting on ITS completion callback instead of a fixed delay
+            // is what stops this timer from restarting (and everything
+            // else below from running) while that animation is still
+            // playing. A short 600ms settle buffer after it reports done,
+            // then the usual cleanup.
+            GameAI.idleGamble(() => setTimeout(afterFreeAction, 600));
+        } else {
+            setTimeout(afterFreeAction, 1400);
         }
+    }
 
-        // After the monster's free action, give the player a brief beat
-        // to see what happened, check for defeat, then restart pressure.
+    // After the monster's free action fully resolves, give the player a
+    // brief beat, check for defeat, then restart pressure.
+    function afterFreeAction() {
+        if (window.GameActions && typeof GameActions.releaseLock === "function") {
+            GameActions.releaseLock();
+        }
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
+        if (checkMonsterDefeat()) return;
+
+        // 600 ms grace period: if during this window the player clicks
+        // a hand card and enters the choice menu, the timer stays
+        // paused. Otherwise the idle-pressure cycle resumes.
         setTimeout(() => {
-            if (window.GameActions && typeof GameActions.releaseLock === "function") {
-                GameActions.releaseLock();
-            }
-            if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
-                GameBonusAction.update();
-            }
-            if (checkMonsterDefeat()) return;
-
-            // 600 ms grace period: if during this window the player clicks
-            // a hand card and enters the choice menu, the timer stays
-            // paused. Otherwise the idle-pressure cycle resumes.
-            setTimeout(() => {
-                const playerActing = window.GameActions
-                    && typeof GameActions.isActing === "function"
-                    && GameActions.isActing();
-                if (playerActing) return;             // player already in a choice -> stay paused
-                start();
-            }, 600);
-        }, 1400);
+            const playerActing = window.GameActions
+                && typeof GameActions.isActing === "function"
+                && GameActions.isActing();
+            if (playerActing) return;             // player already in a choice -> stay paused
+            start();
+        }, 600);
     }
 
     // -------- Monster defeat --------

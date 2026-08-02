@@ -14,10 +14,12 @@
 // targeting) keeps working.
 //
 // Reads from: window.GameActions, window.GamePlay, window.GameTurnTimer,
-// window.GameBonusAction, and the globals getShapeForCard()/isSpecialCard()
-// from Start Game.js. Never reaches into another file's private state —
-// only their public bridge APIs, so this file can be edited without
-// touching anything else.
+// window.GameBonusAction, window.GameAIAnimations (visuals for this
+// file's moves), window.GameWheelAnimation (the prediction wheel spin,
+// reused for the idle-timeout gamble), and the globals getShapeForCard()/
+// isSpecialCard()/getPlusCount() from Start Game CardDeck.js. Never
+// reaches into another file's private state — only their public bridge
+// APIs, so this file can be edited without touching anything else.
 //
 // Current behavior is intentionally simple (mostly random) — this is
 // the file to expand when the monster's behavior gets configured
@@ -381,56 +383,169 @@
         return false;     // no valid attack — caller will fall back to gamble
     }
 
-    // When the monster auto-gambles, it "guesses" 50/50:
-    //   - Correct guess  -> takes a random card from the player's hand onto
-    //                       the playing field (added as player-owned so the
-    //                       player can later try to reclaim it).
-    //   - Wrong guess    -> plays one of the monster's own cards to the
-    //                       playing field as monster-owned (the old fallback).
-    function idleGamble() {
-        if (!window.GameActions) return;
+    // When the monster auto-gambles, it "guesses" 50/50. Sequence:
+    //   1. Announce: a flashy banner under the monster + the prediction
+    //      wheel spins to the guess's color (green = correct, red =
+    //      wrong) — same green/right, red/wrong convention the player's
+    //      own gambles use. ~1.8s.
+    //   2. Resolve, based on the guess:
+    //        - Correct: a random player hand card visually zooms up to
+    //          the monster sprite, then lands on the field (still
+    //          player-owned, so it can be reclaimed later — unchanged
+    //          from before, just animated now). ~2s.
+    //        - Wrong: the monster's box slot does its usual reveal
+    //          "jump" (same animation as a normal gamble reveal), then
+    //          that card slips over into the PLAYER's hand outright —
+    //          a real cost for the monster guessing wrong, not just a
+    //          field placement like before. ~2.6s (jump + slip).
+    // onDone (optional) fires once the whole sequence — including the
+    // actual state change — has finished; TurnTimer.js uses it to know
+    // when it's safe to restart the idle-pressure timer.
+    const IDLE_GAMBLE_ANNOUNCE_MS = 1800;   // banner + wheel spin phase
+    const IDLE_GAMBLE_FLASH_MS    = 1500;   // banner's own on-screen time
+    const IDLE_GAMBLE_FLY_MS      = 2000;   // card-movement flight
+    const IDLE_GAMBLE_JUMP_MS     = 600;    // box-slot reveal jump (wrong guess only)
+
+    function idleGamble(onDone) {
+        const finish = () => { if (onDone) onDone(); };
+        if (!window.GameActions) { finish(); return; }
 
         const guessedCorrectly = Math.random() < 0.5;
 
-        if (guessedCorrectly) {
-            // Try to take a player hand card to the field. Exclude special
-            // bonus cards (they're visual trophies, not game cards) and any
-            // card mid losing-animation.
-            const playerCards = document.querySelectorAll(
-                ".hand .card:not(.losing):not(.special-bonus-card)"
+        if (window.GameAIAnimations && typeof GameAIAnimations.showFlashyText === "function") {
+            GameAIAnimations.showFlashyText(
+                guessedCorrectly ? "Monster is gambling... and reads you right!" : "Monster is gambling... and misreads you!",
+                IDLE_GAMBLE_FLASH_MS
             );
-            if (playerCards.length > 0) {
-                const target = playerCards[Math.floor(Math.random() * playerCards.length)];
-                const cardId = Number(target.dataset.cardId);
-                target.classList.add("losing");
-                setTimeout(() => target.remove(), 350);
-                // Card lands on field shortly after, owned by the player (so
-                // they can still reclaim it during a Play Card battle).
-                setTimeout(() => GameActions.placeCardOnField(cardId, "player"), 250);
-                GameActions.showPopup(
-                    `Time's up! Monster gambled correctly\nand took your card #${cardId} onto the field.`
-                );
-                if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
-                    GameTurnTimer.resetPlayerCounter();
-                }
-                return;
-            }
-            // No player hand cards left — fall through to placing own card.
+        }
+        if (window.GameWheelAnimation && typeof GameWheelAnimation.spinToResult === "function") {
+            GameWheelAnimation.spinToResult(guessedCorrectly);
         }
 
-        // Wrong guess (or no player hand cards): place a monster card on field.
+        setTimeout(() => {
+            if (guessedCorrectly) {
+                resolveIdleGambleCorrect(finish);
+            } else {
+                resolveIdleGambleWrong(finish);
+            }
+        }, IDLE_GAMBLE_ANNOUNCE_MS);
+    }
+
+    // Correct guess: a random player hand card flies up to the monster
+    // sprite, then lands on the field as player-owned (so it can still
+    // be reclaimed later during a Play Card battle) — same outcome as
+    // before, just animated instead of instant.
+    function resolveIdleGambleCorrect(onDone) {
+        // Exclude special bonus cards (visual trophies, not game cards)
+        // and any card mid losing-animation.
+        const playerCards = document.querySelectorAll(
+            ".hand .card:not(.losing):not(.special-bonus-card)"
+        );
+        if (playerCards.length === 0) {
+            // Nothing to take — fall back to the wrong-guess flow instead.
+            resolveIdleGambleWrong(onDone);
+            return;
+        }
+
+        const target = playerCards[Math.floor(Math.random() * playerCards.length)];
+        const cardId = Number(target.dataset.cardId);
+
+        const finish = () => {
+            target.remove();
+            GameActions.placeCardOnField(cardId, "player");
+            GameActions.showPopup(
+                `Time's up! Monster gambled correctly\nand took your card #${cardId} onto the field.`
+            );
+            if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+                GameTurnTimer.resetPlayerCounter();
+            }
+            if (onDone) onDone();
+        };
+
+        const monster = document.getElementById("monster");
+        if (monster && window.GameAIAnimations && typeof GameAIAnimations.flyCardToElement === "function") {
+            GameAIAnimations.flyCardToElement(target, monster, IDLE_GAMBLE_FLY_MS, finish);
+        } else {
+            finish();
+        }
+    }
+
+    // Wrong guess: the monster's box slot reveals + jumps (same beat as
+    // a normal gamble reveal), then that card slips into the PLAYER's
+    // hand outright — a real cost for guessing wrong, not just a card
+    // placed on the field like before.
+    function resolveIdleGambleWrong(onDone) {
         const monsterHand = GameActions.getMonsterHand();
         if (monsterHand.length === 0) {
             GameActions.showPopup("Time's up! Monster has nothing to play.");
+            if (onDone) onDone();
             return;
         }
+
         const cardId = monsterHand[Math.floor(Math.random() * monsterHand.length)];
         GameActions.removeFromMonsterHand(cardId);
-        GameActions.dropMonsterSlot(cardId);
-        GameActions.placeCardOnField(cardId, "monster");
-        GameActions.showPopup(
-            `Time's up! Monster gambled and played card #${cardId} onto the field.`
-        );
+        const slot = (typeof GameActions.revealHiddenSlotForCard === "function")
+            ? GameActions.revealHiddenSlotForCard(cardId)
+            : null;
+
+        const finish = () => {
+            if (slot && slot.isConnected) {
+                slot.remove();
+            } else {
+                GameActions.dropMonsterSlot(cardId);
+            }
+            GameActions.addCardToPlayerHand(cardId);
+            GameActions.showPopup(
+                `Time's up! Monster gambled wrong\nand card #${cardId} slipped into your hand!`
+            );
+            if (onDone) onDone();
+        };
+
+        const hand = document.getElementById("hand");
+        if (slot && hand && window.GameAIAnimations
+            && typeof GameAIAnimations.jumpSlot === "function"
+            && typeof GameAIAnimations.flyCardToElement === "function") {
+            GameAIAnimations.jumpSlot(slot, IDLE_GAMBLE_JUMP_MS, () => {
+                GameAIAnimations.flyCardToElement(slot, hand, IDLE_GAMBLE_FLY_MS, finish);
+            });
+        } else {
+            finish();
+        }
+    }
+
+    // -------- Play-card session: rare opportunistic snatch --------
+    // Once per Play Card session (not per click — PlayCard.js calls
+    // this exactly once, when the session starts), the monster has a
+    // small chance to grab a player-owned field card outright while
+    // the player's still deciding what to do. No suit check, and this
+    // can't be contested — the tug-of-war mechanic is unrelated and
+    // only ever applies to the "beat a placed card" flow above.
+    const BATTLE_SNATCH_CHANCE = 0.15;
+
+    function tryBattleSnatch() {
+        if (!window.GameActions || !window.GamePlay) return;
+        if (Math.random() >= BATTLE_SNATCH_CHANCE) return;   // missed the roll
+
+        // A little thinking time before it happens, so it doesn't feel
+        // like an instant jump-scare right as the battle opens.
+        setTimeout(() => {
+            if (typeof GamePlay.isActive !== "function" || !GamePlay.isActive()) return;
+            if (activeContest) return;   // don't interfere with a card mid-contest
+
+            const targets = Array.from(
+                document.querySelectorAll(".monster-field .card[data-owner='player']")
+            );
+            if (targets.length === 0) return;
+
+            const target = targets[Math.floor(Math.random() * targets.length)];
+            const cardId = Number(target.dataset.cardId);
+            target.remove();
+            GameActions.addToMonsterHand(cardId);
+            GameActions.showPopup(`Monster snatched card #${cardId} from the field!`);
+            console.log(`[ai-brain] Battle snatch: card ${cardId}`);
+
+            refreshIfBattleActive();
+        }, 900 + Math.random() * 600);
     }
 
     // -------- Public API --------
@@ -440,7 +555,8 @@
         resetBattleUsage,
         onPlayerPlacedCard,
         tryIdlePlayCard,
-        idleGamble,
+        idleGamble,           // idleGamble(onDone?) — onDone fires once fully resolved
+        tryBattleSnatch,       // called once per Play Card session by PlayCard.js
         // Used by Start Game TugOfWar.js to hijack a contested card.
         claimContest,
         resolveContest,
