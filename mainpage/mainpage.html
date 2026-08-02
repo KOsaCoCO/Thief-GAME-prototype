@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="mainpage.css">
 </head>
 <body>
+    <!-- Mute/unmute square, top-right corner — filled in by Game Audio.js.
+         Empty on purpose; see Audio/Game Audio.js for what goes here. -->
+    <div id="game-audio-mute-mount"></div>
+
     <main class="container">
         <h1 id="greeting">Hello</h1>
 
@@ -19,5 +23,8 @@
     </main>
 
     <script src="mainpage.js"></script>
+    <!-- Mute button + background music. Safe to delete along with the
+         mount div above — the menu works fine without it. -->
+    <script src="Audio/Game Audio.js"></script>
 </body>
 </html>

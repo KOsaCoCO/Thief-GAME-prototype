@@ -12,8 +12,17 @@
     <main class="container">
         <h1>Settings</h1>
         <p>Settings options go here.</p>
+
+        <!-- Music panel — filled in by Game Audio.js. Empty on purpose;
+             see ../Audio/Game Audio.js for what goes here. -->
+        <div id="game-audio-settings"></div>
     </main>
 
     <script src="Settings.js"></script>
+    <!-- Music panel + mute button (mute button only appears if this
+         page also has a #game-audio-mute-mount, which it doesn't —
+         Settings just gets the panel). Safe to delete along with the
+         mount div above. -->
+    <script src="../Audio/Game Audio.js"></script>
 </body>
 </html>
