@@ -9,7 +9,10 @@
 // random hand draw will all keep working without this file.
 //
 // Requires globals: TOTAL_CARDS, getShapeForCard(), isSpecialCard()
-// (Start Game CardDeck.js) and paintCard() (Start Game.js).
+// (Start Game CardDeck.js) and paintCard() (Start Game.js). The wheel's
+// spin itself is animated by Start Game Wheel Animation.js — this file
+// only works out whether the guess was right and hands that boolean
+// over (GameWheelAnimation.spinToResult(guessedCorrectly)).
 //
 // Turn flow per player click on a card in their hand:
 //   1. The player's card has a suit S and number N. The arrow buttons
@@ -20,13 +23,13 @@
 //      current hand:
 //        - CORRECT (suit + direction): the monster has at least one
 //          card of suit S whose number satisfies the call. The wheel
-//          spins to the call's color (green = HIGH, red = LOW), the
-//          slot for that monster card does the anticipation "jump"
-//          animation, and the card lands on the playing field.
+//          spins GREEN (correct guess), the slot for that monster card
+//          does the anticipation "jump" animation, and the card lands
+//          on the playing field.
 //        - WRONG DIRECTION (suit matches but every same-suit monster
-//          card goes the opposite way): the wheel spins to the
-//          OPPOSITE color so the player can see they guessed wrong,
-//          and the monster takes the player's clicked card.
+//          card goes the opposite way): the wheel spins RED (wrong
+//          guess) so the player can see they guessed wrong, and the
+//          monster takes the player's clicked card.
 //        - NO SUIT MATCH (the monster has no cards of suit S at all):
 //          a popup explains it, no wheel spin, then the monster takes
 //          the player's clicked card.
@@ -307,18 +310,17 @@
             ? sameSuit.filter((id) => id > cardId)
             : sameSuit.filter((id) => id < cardId);
 
-        // Wheel direction reflects the TRUTH about the monster's same-suit card
-        // relative to the player's card:
-        //   - If the call lined up, the truth matches the call.
-        //   - If the call was wrong (all same-suit monster cards go the other
-        //     way), the truth is the opposite of the call.
-        const wheelDirection = (correctMatches.length > 0)
-            ? playerCall
-            : (playerCall === "high" ? "low" : "high");
+        // The wheel's color is purely "did the player guess right?" —
+        // green for a correct call, red for a wrong one — regardless of
+        // whether the call itself was "high" or "low". The spin animation
+        // itself lives in Start Game Wheel Animation.js; this file only
+        // works out the true/false to feed it.
+        const guessedCorrectly = correctMatches.length > 0;
+        const spin = (window.GameWheelAnimation && typeof GameWheelAnimation.spinToResult === "function")
+            ? GameWheelAnimation.spinToResult(guessedCorrectly)
+            : Promise.resolve();
 
-        const isHigher = (wheelDirection === "high");
-
-        spinWheelToResult(isHigher).then(() => {
+        spin.then(() => {
             setTimeout(() => {
                 if (correctMatches.length > 0) {
                     // WHICH matching card the monster reveals is its decision —
@@ -430,61 +432,6 @@
             onChoice(btn.dataset.call);     // "high" or "low"
         };
         arrows.addEventListener("click", handler);
-    }
-
-    // Reads the disc's current rotation (set by the CSS idle-spin animation),
-    // freezes it, then animates from there to the target angle so the spin
-    // looks continuous instead of snapping back to 0.
-    function spinWheelToResult(isHigher) {
-        const wheel = document.getElementById("prediction-wheel");
-        const disc  = document.getElementById("wheel-disc");
-        if (!wheel || !disc) return Promise.resolve();
-
-        const currentDeg = readRotationDeg(disc);
-
-        // Stop the CSS-driven idle spin and pin the disc to its current angle
-        wheel.classList.remove("idle-spinning");
-        disc.style.transform = `rotate(${currentDeg}deg)`;
-        void disc.offsetWidth;              // force layout flush
-
-        // Target: 0° = green visible (HIGH truth), 180° = red visible (LOW truth).
-        const targetFinalAngle = isHigher ? 0 : 180;
-        const FULL_TURNS = 360 * 3;
-        const norm = ((currentDeg % 360) + 360) % 360;
-        const delta = ((targetFinalAngle - norm) + 360) % 360;
-        const target = currentDeg + FULL_TURNS + delta;
-
-        return new Promise((resolve) => {
-            const anim = disc.animate(
-                [
-                    { transform: `rotate(${currentDeg}deg)` },
-                    { transform: `rotate(${target}deg)`     },
-                ],
-                {
-                    duration: 1800,
-                    easing:   "cubic-bezier(0.18, 0.85, 0.3, 1)",
-                    fill:     "forwards",
-                }
-            );
-            const finish = () => {
-                disc.style.transform = `rotate(${target}deg)`;   // persist final angle
-                resolve();
-            };
-            anim.onfinish = finish;
-            // Fallback in case onfinish doesn't fire
-            setTimeout(finish, 1900);
-        });
-    }
-
-    // Pull a numeric rotation in degrees out of an element's current matrix transform.
-    function readRotationDeg(el) {
-        const t = getComputedStyle(el).transform;
-        if (!t || t === "none") return 0;
-        const m = t.match(/matrix\(([^)]+)\)/);
-        if (!m) return 0;
-        const parts = m[1].split(",").map(Number);
-        const a = parts[0], b = parts[1];
-        return Math.atan2(b, a) * 180 / Math.PI;
     }
 
     // -------- Monster plays a card --------

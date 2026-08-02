@@ -12,7 +12,14 @@
 //      own hand, removes their slots from the box, and places them on
 //      the field as monster-owned.
 //   4. A follow-up popup tells the player to take their cards back
-//      (and the monster's too), suggesting Gamble for unknowns.
+//      (and the monster's too), suggesting Gamble for unknowns. Hand
+//      clicks stay blocked (capture listener still attached, body has
+//      .setup-mode) for the player's whole time reading this popup —
+//      cleanup() only runs once they click its OK button, plus a short
+//      extra delay (see onSecondPopupOk). This is the fix for a bug
+//      where a click landing a moment before this popup appeared could
+//      sneak through and start the idle-pressure timer while the popup
+//      was still covering the field.
 //
 // SAFE TO DELETE: remove this file and its <script> tag from the HTML
 // and the game just starts with an empty field — Gamble and Play Card
@@ -25,6 +32,7 @@
     const REQUIRED_PICKS   = 2;
     const MONSTER_PICKS    = 2;
     const SECOND_POPUP_MS  = 5000;   // longer than the default so the player can read it
+    const POST_OK_DELAY_MS = 1000;   // beat after OK before input unblocks and the timer starts
 
     let selected   = new Set();      // selected hand card elements
     let active     = false;          // setup-mode active flag
@@ -49,6 +57,12 @@
         }
 
         active = true;
+
+        // Belt-and-braces alongside the hand-click capture blocker below:
+        // Start Game TurnTimer.js's start() gate also checks for this
+        // class, so nothing can start the idle-pressure timer for as long
+        // as setup is in progress, no matter what triggers it.
+        document.body.classList.add("setup-mode");
 
         // Show the modal
         modalEl.classList.add("visible");
@@ -136,30 +150,39 @@
         });
 
         // After both monsters' cards are placed, show the second popup.
+        // Hand clicks stay blocked (cleanup() is NOT called here) for as
+        // long as this popup is up — only onSecondPopupOk() below releases
+        // it, once the player has actually dismissed the popup.
         setTimeout(() => {
-            if (window.GameActions) {
-                // Stays open until the player clicks OK — no auto-dismiss.
-                // When OK is clicked, the idle-pressure timer starts running.
-                GameActions.showPopup(
-                    "Now take your cards back — and the monster's too!\n" +
-                    "Use Play Card to attack what's on the field.\n" +
-                    "Use Gamble if you're unsure of a monster card's value.\n\n" +
-                    "Heads up: a 3-second timer runs above the monster's box.\n" +
-                    "If you don't move first, the monster takes its own turn.",
-                    {
-                        needsOk: true,
-                        onOk: () => {
-                            if (window.GameTurnTimer) window.GameTurnTimer.start();
-                            if (window.GameBonusAction
-                                && typeof GameBonusAction.update === "function") {
-                                GameBonusAction.update();
-                            }
-                        },
-                    }
-                );
+            if (!window.GameActions) {
+                cleanup();   // nothing to show it with — just release the block
+                return;
             }
-            cleanup();
+            // Stays open until the player clicks OK — no auto-dismiss.
+            GameActions.showPopup(
+                "Now take your cards back — and the monster's too!\n" +
+                "Use Play Card to attack what's on the field.\n" +
+                "Use Gamble if you're unsure of a monster card's value.\n\n" +
+                "Heads up: a 3-second timer runs above the monster's box.\n" +
+                "If you don't move first, the monster takes its own turn.",
+                { needsOk: true, onOk: onSecondPopupOk }
+            );
         }, MONSTER_PICKS * 350 + 600);
+    }
+
+    // Runs once the player dismisses the second popup. Input (hand
+    // clicks) stays blocked and the idle-pressure timer stays gated
+    // (body.setup-mode) for one more short beat after that click, so the
+    // field has a moment to settle before the game goes fully live —
+    // then cleanup() finally lifts the block and the timer starts.
+    function onSecondPopupOk() {
+        setTimeout(() => {
+            cleanup();
+            if (window.GameTurnTimer) window.GameTurnTimer.start();
+            if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+                GameBonusAction.update();
+            }
+        }, POST_OK_DELAY_MS);
     }
 
     function pickRandomSubset(arr, n) {
@@ -173,6 +196,7 @@
 
     function cleanup() {
         active = false;
+        document.body.classList.remove("setup-mode");
         if (handEl) handEl.removeEventListener("click", onHandClickSetup, true);
         if (confirmEl) confirmEl.removeEventListener("click", onConfirm);
         // Remove any lingering setup-selected classes (cards still in hand)
