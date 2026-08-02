@@ -7,15 +7,16 @@
 // / 40% circle / 10% square split, freshly reshuffled each time this
 // page loads.
 //
-// getShapeForCard()/isSpecialCard()/getPlusCount() stay bare globals
-// (no window.* wrapper), same as before — every other Start Game file
-// keeps calling them exactly as it always has. Only the numbers moved
-// here, not the contract, so nothing downstream needed to change.
+// getShapeForCard()/isSpecialCard()/getPlusCount()/getPlusCeiling() stay
+// bare globals (no window.* wrapper), same as before — every other
+// Start Game file keeps calling them exactly as it always has. Only the
+// numbers moved here, not the contract, so nothing downstream needed
+// to change.
 //
-// isSpecialCard()/getPlusCount() are a thin pass-through to Start Game
-// CardBoosters.js's live per-card "+" tracking — that file is the
-// actual source of truth. No card starts a game with a pip: the ONLY
-// way to earn one is a correct gamble call (Start Game Actions.js's
+// isSpecialCard()/getPlusCount()/getPlusCeiling() are a thin pass-through
+// to Start Game CardBoosters.js's live per-card "+" tracking — that file
+// is the actual source of truth. No card starts a game with a pip: the
+// ONLY way to earn one is a correct gamble call (Start Game Actions.js's
 // awardGambleBoosterPip(), which calls GameBoosters.addPlus() itself).
 // This file never grants pips — it only ever reads them.
 //
@@ -77,6 +78,15 @@ function getPlusCount(cardId) {
     return (window.GameBoosters && typeof GameBoosters.getPlusCount === "function")
         ? GameBoosters.getPlusCount(cardId)
         : 0;
+}
+
+// Total pip slots a card can hold (currently 3) — used by paintCard()
+// to know how many slots to draw, filled vs empty. Backed by
+// Start Game CardBoosters.js's PLUS_CEILING.
+function getPlusCeiling() {
+    return (window.GameBoosters && typeof GameBoosters.PLUS_CEILING === "number")
+        ? GameBoosters.PLUS_CEILING
+        : 3;
 }
 
 function isSpecialCard(cardId) {

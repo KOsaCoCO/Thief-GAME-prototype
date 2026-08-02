@@ -57,9 +57,25 @@ function paintCard(cardEl, cardId, shape) {
     num.textContent = cardId;
     cardEl.appendChild(num);
 
-    // Mark/unmark the "+" indicator — any card can carry one now (see
-    // Start Game CardBoosters.js), not just the starting special triangles.
-    cardEl.classList.toggle("special", isSpecialCard(cardId));
+    // "+" pip slots — up to getPlusCeiling() (3) total, drawn left from
+    // the original top-right corner spot. Filled count comes from the
+    // card's live pip count (Start Game CardBoosters.js); any card can
+    // carry one now, not just the starting special triangles. Only
+    // shown at all once the card has earned its first pip.
+    const pips = (typeof getPlusCount === "function") ? getPlusCount(cardId) : 0;
+    cardEl.classList.toggle("special", pips > 0);
+    if (pips > 0) {
+        const ceiling = (typeof getPlusCeiling === "function") ? getPlusCeiling() : 3;
+        const slots = document.createElement("span");
+        slots.className = "card-plus-slots";
+        for (let i = 0; i < ceiling; i++) {
+            const slot = document.createElement("span");
+            slot.className = "card-plus-slot" + (i < pips ? "" : " empty");
+            slot.textContent = "+";
+            slots.appendChild(slot);
+        }
+        cardEl.appendChild(slots);
+    }
 }
 
 function pickRandomCards(count) {

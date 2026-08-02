@@ -292,9 +292,8 @@ body.timer-fast:not(.bonus-mode) .layer-monster {
     box-shadow: 0 14px 22px rgba(0, 0, 0, 0.65);
 }
 
-/* "+" indicator drawn on the top-right of every special-triangle card,
-   wherever it appears (hand, field, revealed slot in monster's box). */
-.card.special::before,
+/* "+" indicator for the monster's box slots (a compact hand summary,
+   not a full card) — stays a single mark regardless of pip count. */
 .monster-box .slot.special::before {
     content: "+";
     position: absolute;
@@ -307,6 +306,37 @@ body.timer-fast:not(.bonus-mode) .layer-monster {
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
     z-index: 3;
     pointer-events: none;
+}
+
+/* "+" pip slots on an actual card (hand or field) — up to 3, built by
+   paintCard() in Start Game.js from the live count in Start Game
+   CardBoosters.js. Anchored at the same top-right spot the single "+"
+   used to sit; row-reverse means the FIRST slot (the original position)
+   stays rightmost and each additional pip grows the row to the left. */
+.card-plus-slots {
+    position: absolute;
+    top: 2px;
+    right: 5px;
+    display: flex;
+    flex-direction: row-reverse;
+    gap: 2px;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.card-plus-slot {
+    font-size: 1.05em;
+    line-height: 1;
+    font-weight: bold;
+    color: #f1c40f;                /* gold — a filled pip */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* An unfilled slot — grey, still visible so the card reads as "room for more". */
+.card-plus-slot.empty {
+    color: #888888;
+    opacity: 1;
+    text-shadow: none;
 }
 
 /* Smaller offsets inside the tiny box slot. */

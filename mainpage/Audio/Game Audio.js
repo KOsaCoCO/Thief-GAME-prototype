@@ -6,33 +6,31 @@
 // the pages together. Each page just needs an empty "mount" element
 // for this file to fill in:
 //   - mainpage.html:  #game-audio-mute-mount  -> the mute/unmute
-//     square (top-right corner) + a hidden background player.
-//   - Settings.html:  #game-audio-settings    -> the visible "now
-//     playing" widget, the playlist-link input, and a Load button.
+//     square (top-right corner) + a hidden background <audio> player.
+//   - Settings.html:  #game-audio-settings    -> the visible track
+//     picker, volume slider, and play/mute controls.
 // A page with neither container just gets no audio behavior — nothing
 // else on it depends on this file.
 //
-// The mute flag and the chosen playlist link are stored in
-// localStorage (shared by every page on this site), so a link pasted
-// in Settings is what plays on the main menu too, and muting on one
-// page stays muted the next time any page using this file loads.
+// Plays LOCAL audio files from Audio/tracks/ (listed in
+// Audio/tracks/tracklist.js) instead of embedding SoundCloud — that
+// was tried first, but individual SoundCloud tracks can silently fail
+// to stream (some are restricted from third-party embedding, which
+// shows up as 404s on SoundCloud's own stream endpoints, with no way
+// to know in advance). A local file you supply yourself always plays.
 //
-// IMPORTANT — there is no "local host" or backend involved anywhere
-// here, and none is needed. The SoundCloud player (an <iframe>) and
-// its control script (w.soundcloud.com/player/api.js) are loaded
-// straight from soundcloud.com over the browser's own internet
-// connection, exactly like loading an <img>. That works whether this
-// page is opened as a plain file:// double-click or served from
-// somewhere — the only requirement is being online, same as any page
-// that embeds a YouTube or SoundCloud player normally.
+// The mute flag, volume level, and chosen track are stored in
+// localStorage (shared by every page on this site), so picking a
+// track in Settings is what plays on the main menu too, and a mute or
+// volume change on one page carries over the next time any page using
+// this file loads.
 //
-// "Browsing" here means: paste a public SoundCloud playlist or track
-// link (Settings has a "Browse SoundCloud" button that opens
-// soundcloud.com in a new tab to go find one) and click Load. There's
-// no bundled catalog of "popular playlists" — SoundCloud's own catalog
-// changes constantly and isn't something this file can search without
-// SoundCloud API credentials, which this project doesn't have. This
-// keeps the feature honest: it plays whatever link you give it.
+// Browsers still require a real click before ANY audio can be
+// audible, local file or not — that's a platform rule, not something
+// this file can bypass. The player starts muted (which autoplay is
+// always allowed to do) so it's at least running, and the mute
+// button / volume slider / track picker are all genuine user
+// gestures that reliably make it audible.
 //
 // SAFE TO DELETE: remove this file's <script> tag from a page and
 // that page just loses its audio controls.
@@ -41,10 +39,19 @@
 (function () {
     "use strict";
 
-    const STORAGE_MUTED    = "thiefGameAudioMuted";
-    const STORAGE_PLAYLIST = "thiefGameAudioPlaylistUrl";
-    const WIDGET_API_SRC   = "https://w.soundcloud.com/player/api.js";
-    const BG_PLAYER_ID     = "game-audio-background-player";
+    const STORAGE_MUTED  = "thiefGameAudioMuted";
+    const STORAGE_VOLUME = "thiefGameAudioVolume";
+    const STORAGE_TRACK  = "thiefGameAudioTrackFile";
+    const DEFAULT_VOLUME = 100;
+    const AUDIO_EL_ID     = "game-audio-player";
+
+    // Resolve Audio/tracks/ relative to THIS script's own location (not
+    // the page's), so it works the same whether it's included as
+    // "Audio/Game Audio.js" (mainpage.html) or "../Audio/Game Audio.js"
+    // (Settings.html). document.currentScript is only valid during this
+    // initial synchronous run, so it's captured here at the top.
+    const SCRIPT_URL      = document.currentScript ? document.currentScript.src : "";
+    const TRACKS_BASE_URL = SCRIPT_URL ? new URL("tracks/", SCRIPT_URL).href : "tracks/";
 
     // -------- Shared state (localStorage) --------
 
@@ -54,49 +61,82 @@
     function setMuted(muted) {
         localStorage.setItem(STORAGE_MUTED, muted ? "1" : "0");
     }
-    function getPlaylistUrl() {
-        return localStorage.getItem(STORAGE_PLAYLIST) || "";
+    // The level played at when NOT muted (0-100). Mute is a separate,
+    // temporary override — it never overwrites this, so unmuting always
+    // comes back at whatever level was last set here.
+    function getVolume() {
+        const stored = Number(localStorage.getItem(STORAGE_VOLUME));
+        return Number.isFinite(stored) && stored >= 0 && stored <= 100 ? stored : DEFAULT_VOLUME;
     }
-    function setPlaylistUrl(url) {
-        localStorage.setItem(STORAGE_PLAYLIST, url);
+    function setVolume(vol) {
+        const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+        localStorage.setItem(STORAGE_VOLUME, String(clamped));
+    }
+    function getTrackFile() {
+        return localStorage.getItem(STORAGE_TRACK) || "";
+    }
+    function setTrackFile(file) {
+        localStorage.setItem(STORAGE_TRACK, file);
     }
 
-    // -------- SoundCloud widget (loaded from soundcloud.com, not local) --------
+    // -------- Track list (Audio/tracks/tracklist.js) --------
 
-    let widgetApiLoadPromise = null;
-    function loadWidgetApi() {
-        if (window.SC && window.SC.Widget) return Promise.resolve();
-        if (widgetApiLoadPromise) return widgetApiLoadPromise;
-        widgetApiLoadPromise = new Promise((resolve, reject) => {
+    let tracklistLoadPromise = null;
+    function loadTracklist() {
+        if (Array.isArray(window.GAME_AUDIO_TRACKS)) return Promise.resolve(window.GAME_AUDIO_TRACKS);
+        if (tracklistLoadPromise) return tracklistLoadPromise;
+        tracklistLoadPromise = new Promise((resolve) => {
             const script = document.createElement("script");
-            script.src = WIDGET_API_SRC;
-            script.onload  = () => resolve();
-            script.onerror = () => reject(new Error("Could not reach soundcloud.com for the widget API."));
+            script.src = TRACKS_BASE_URL + "tracklist.js";
+            script.onload  = () => resolve(Array.isArray(window.GAME_AUDIO_TRACKS) ? window.GAME_AUDIO_TRACKS : []);
+            script.onerror = () => resolve([]);
             document.head.appendChild(script);
         });
-        return widgetApiLoadPromise;
+        return tracklistLoadPromise;
     }
 
-    function buildWidgetIframe(playlistUrl) {
-        const iframe = document.createElement("iframe");
-        iframe.setAttribute("allow", "autoplay");
-        iframe.setAttribute("frameborder", "no");
-        iframe.setAttribute("scrolling", "no");
-        // No auto_play: most browsers block scripted autoplay-with-sound
-        // anyway, and a widget stuck half-way through an autoplay attempt
-        // can make a manual press of its own play button look like it does
-        // nothing. Letting the player start paused and only ever begin on
-        // an actual click sidesteps that entirely.
-        iframe.src = "https://w.soundcloud.com/player/?url=" +
-            encodeURIComponent(playlistUrl) +
-            "&show_artwork=false&visual=false";
-        return iframe;
+    // -------- The <audio> element itself --------
+
+    function createAudioElement(cssClass) {
+        const audio = document.createElement("audio");
+        audio.id = AUDIO_EL_ID;
+        audio.loop = true;
+        audio.preload = "auto";
+        if (cssClass) audio.className = cssClass;
+        return audio;
     }
 
-    function applyMuteToBackgroundPlayer() {
-        const iframe = document.getElementById(BG_PLAYER_ID);
-        if (!iframe || !window.SC || !SC.Widget) return;
-        SC.Widget(iframe).setVolume(isMuted() ? 0 : 100);
+    function setAudioTrack(audio, trackFile) {
+        audio.src = TRACKS_BASE_URL + encodeURIComponent(trackFile);
+    }
+
+    function applyStateToAudio(audio) {
+        audio.volume = getVolume() / 100;
+        audio.muted  = isMuted();
+    }
+
+    // Starts the element muted (universally allowed for autoplay), then
+    // makes a best-effort attempt to raise it to the real preference —
+    // works on some browsers/repeat visits, not all. Callers that run
+    // from an actual click (mute button, track picker, play button)
+    // should call ensurePlayingAudibly() instead, which is reliable.
+    function attemptAutoplay(audio) {
+        const wantMuted = isMuted();
+        audio.muted = true;
+        audio.play().catch(() => {});
+        if (!wantMuted) {
+            setTimeout(() => { audio.muted = false; }, 50);
+        }
+    }
+
+    // Called from real click/change handlers — guaranteed to be able to
+    // make sound, since it always runs as the direct result of a user
+    // gesture.
+    function ensurePlayingAudibly(audio) {
+        applyStateToAudio(audio);
+        if (!isMuted() && audio.paused) {
+            audio.play().catch(() => {});
+        }
     }
 
     // -------- mainpage.html: mute button + background player --------
@@ -117,22 +157,20 @@
         btn.addEventListener("click", () => {
             setMuted(!isMuted());
             updateButtonFace(btn);
-            applyMuteToBackgroundPlayer();
+            const audio = document.getElementById(AUDIO_EL_ID);
+            if (audio) ensurePlayingAudibly(audio);
         });
 
-        const playlistUrl = getPlaylistUrl();
-        if (!playlistUrl) return;   // nothing chosen yet in Settings — button still works, just nothing playing
+        const trackFile = getTrackFile();
+        if (!trackFile) {
+            btn.title = "No music set yet — add a track in Settings";
+            return;
+        }
 
-        const iframe = buildWidgetIframe(playlistUrl);
-        iframe.id = BG_PLAYER_ID;
-        iframe.className = "game-audio-hidden-player";
-        document.body.appendChild(iframe);
-
-        loadWidgetApi()
-            .then(() => {
-                SC.Widget(iframe).bind(SC.Widget.Events.READY, applyMuteToBackgroundPlayer);
-            })
-            .catch((err) => console.warn("[game-audio]", err.message));
+        const audio = createAudioElement();
+        setAudioTrack(audio, trackFile);
+        document.body.appendChild(audio);
+        attemptAutoplay(audio);
     }
 
     function updateButtonFace(btn) {
@@ -140,54 +178,101 @@
         btn.classList.toggle("muted", isMuted());
     }
 
-    // -------- Settings.html: visible player + editable playlist link --------
+    // -------- Settings.html: track picker + volume + play/mute --------
 
     function initSettingsPanel() {
         const container = document.getElementById("game-audio-settings");
         if (!container) return;
 
         injectStyles();
+        loadTracklist().then((tracks) => renderSettingsPanel(container, tracks));
+    }
+
+    function renderSettingsPanel(container, tracks) {
+        if (!tracks || tracks.length === 0) {
+            container.innerHTML =
+                '<h2 class="game-audio-title">Music</h2>' +
+                '<p class="game-audio-hint">No tracks yet — drop an audio file into ' +
+                '<code>mainpage/Audio/tracks/</code> and list it in ' +
+                '<code>tracklist.js</code>, then reload this page.</p>';
+            return;
+        }
+
+        const optionsHtml = tracks
+            .map((t) => `<option value="${escapeHtml(t.file)}">${escapeHtml(t.label || t.file)}</option>`)
+            .join("");
 
         container.innerHTML =
             '<h2 class="game-audio-title">Music</h2>' +
             '<p id="game-audio-mute-status" class="game-audio-mute-status"></p>' +
-            '<div id="game-audio-player-slot" class="game-audio-player-slot"></div>' +
-            '<label class="game-audio-label" for="game-audio-url-input">SoundCloud playlist or track link</label>' +
-            '<input id="game-audio-url-input" class="game-audio-input" type="text" ' +
-            'placeholder="https://soundcloud.com/artist/sets/playlist-name">' +
+            '<label class="game-audio-label" for="game-audio-track-select">Track</label>' +
+            `<select id="game-audio-track-select" class="game-audio-input">${optionsHtml}</select>` +
+            '<label class="game-audio-label" for="game-audio-volume-input">' +
+            'Volume <span id="game-audio-volume-value"></span></label>' +
+            '<input id="game-audio-volume-input" class="game-audio-volume" type="range" min="0" max="100" step="1">' +
             '<div class="game-audio-buttons">' +
-            '<button id="game-audio-load-btn" type="button" class="game-audio-btn">Load</button>' +
+            '<button id="game-audio-play-btn" type="button" class="game-audio-btn">Play</button>' +
             '<button id="game-audio-mute-btn" type="button" class="game-audio-btn">Mute</button>' +
-            '<a class="game-audio-btn game-audio-btn-secondary" href="https://soundcloud.com" target="_blank" rel="noopener">Browse SoundCloud &#8599;</a>' +
-            '</div>' +
-            '<p class="game-audio-hint">Find a playlist on SoundCloud, copy its link, paste it above and click Load — it plays here and on the main menu until you change it.</p>';
+            '</div>';
 
-        const input    = document.getElementById("game-audio-url-input");
-        const loadBtn  = document.getElementById("game-audio-load-btn");
-        const muteBtn  = document.getElementById("game-audio-mute-btn");
-        input.value = getPlaylistUrl();
+        const select      = document.getElementById("game-audio-track-select");
+        const volumeInput = document.getElementById("game-audio-volume-input");
+        const playBtn     = document.getElementById("game-audio-play-btn");
+        const muteBtn     = document.getElementById("game-audio-mute-btn");
 
-        loadBtn.addEventListener("click", () => {
-            const url = input.value.trim();
-            if (!url) return;
-            setPlaylistUrl(url);
-            renderSettingsPlayer(url);
+        // Fall back to the first listed track if nothing's saved yet, or
+        // the saved one is no longer in the list (file renamed/removed).
+        let currentFile = getTrackFile();
+        if (!tracks.some((t) => t.file === currentFile)) {
+            currentFile = tracks[0].file;
+            setTrackFile(currentFile);
+        }
+        select.value = currentFile;
+
+        const audio = createAudioElement();
+        setAudioTrack(audio, currentFile);
+        container.appendChild(audio);
+        attemptAutoplay(audio);
+
+        function updatePlayButton() {
+            playBtn.textContent = audio.paused ? "Play" : "Pause";
+        }
+        audio.addEventListener("play",  updatePlayButton);
+        audio.addEventListener("pause", updatePlayButton);
+        updatePlayButton();
+
+        select.addEventListener("change", () => {
+            setTrackFile(select.value);
+            setAudioTrack(audio, select.value);
+            ensurePlayingAudibly(audio);   // change event = real gesture
         });
 
-        // Mute is shared with the main menu's button (same localStorage
-        // flag) — this is the fix for a real bug: without a visible
-        // toggle HERE, a mute flipped on earlier (e.g. testing the main
-        // menu button) silently zeroes this preview's volume too, with
-        // nothing on this page explaining why nothing's audible.
+        playBtn.addEventListener("click", () => {
+            if (audio.paused) {
+                ensurePlayingAudibly(audio);
+            } else {
+                audio.pause();
+            }
+        });
+
         muteBtn.addEventListener("click", () => {
             setMuted(!isMuted());
             updateMuteStatus(muteBtn);
-            applyMuteToBackgroundPlayer();          // in case it's also playing on this page
-            applyMuteToSettingsPlayer();
+            ensurePlayingAudibly(audio);
         });
         updateMuteStatus(muteBtn);
 
-        if (getPlaylistUrl()) renderSettingsPlayer(getPlaylistUrl());
+        volumeInput.value = String(getVolume());
+        updateVolumeLabel();
+        volumeInput.addEventListener("input", () => {
+            setVolume(Number(volumeInput.value));
+            updateVolumeLabel();
+            if (isMuted()) {
+                setMuted(false);
+                updateMuteStatus(muteBtn);
+            }
+            ensurePlayingAudibly(audio);
+        });
     }
 
     function updateMuteStatus(muteBtn) {
@@ -202,27 +287,15 @@
         }
     }
 
-    function applyMuteToSettingsPlayer() {
-        const slot = document.getElementById("game-audio-player-slot");
-        const iframe = slot && slot.querySelector("iframe");
-        if (!iframe || !window.SC || !SC.Widget) return;
-        SC.Widget(iframe).setVolume(isMuted() ? 0 : 100);
+    function updateVolumeLabel() {
+        const label = document.getElementById("game-audio-volume-value");
+        if (label) label.textContent = getVolume() + "%";
     }
 
-    function renderSettingsPlayer(url) {
-        const slot = document.getElementById("game-audio-player-slot");
-        if (!slot) return;
-
-        slot.innerHTML = "";
-        const iframe = buildWidgetIframe(url);
-        iframe.className = "game-audio-visible-player";
-        slot.appendChild(iframe);
-
-        loadWidgetApi()
-            .then(() => {
-                SC.Widget(iframe).bind(SC.Widget.Events.READY, applyMuteToSettingsPlayer);
-            })
-            .catch((err) => console.warn("[game-audio]", err.message));
+    function escapeHtml(str) {
+        const div = document.createElement("div");
+        div.textContent = String(str);
+        return div.innerHTML;
     }
 
     // -------- Styling — injected once, shared by both mount points --------
@@ -239,21 +312,20 @@
             "#game-audio-toggle:hover{background-color:#eeeeee;}" +
             "#game-audio-toggle:active{transform:scale(0.94);}" +
             "#game-audio-toggle.muted{opacity:.55;}" +
-            ".game-audio-hidden-player{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;border:0;}" +
             ".game-audio-title{color:#2c3e50;margin-bottom:14px;}" +
-            ".game-audio-player-slot{margin-bottom:14px;}" +
-            ".game-audio-visible-player{width:100%;max-width:500px;height:166px;border:0;}" +
             ".game-audio-label{display:block;text-align:left;font-weight:bold;color:#2c3e50;margin:0 auto 6px;max-width:500px;}" +
             ".game-audio-input{width:100%;max-width:500px;padding:10px 12px;font-size:1rem;" +
-            "font-family:inherit;border:2px solid #2c3e50;border-radius:6px;margin-bottom:12px;}" +
+            "font-family:inherit;border:2px solid #2c3e50;border-radius:6px;margin-bottom:12px;background-color:#ffffff;}" +
             ".game-audio-buttons{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;}" +
             ".game-audio-btn{padding:10px 18px;font-family:inherit;font-weight:bold;font-size:.95rem;" +
             "color:#2c3e50;background-color:#ffffff;border:2px solid #2c3e50;border-radius:6px;" +
             "cursor:pointer;text-decoration:none;transition:background-color .2s ease,color .2s ease;}" +
             ".game-audio-btn:hover{background-color:#2c3e50;color:#ffffff;}" +
             ".game-audio-hint{font-size:.85rem;color:#666;max-width:500px;margin:0 auto;}" +
+            ".game-audio-hint code{background-color:#e8e8e8;padding:1px 5px;border-radius:4px;}" +
             ".game-audio-mute-status{display:none;font-size:.9rem;font-weight:bold;color:#c0392b;margin-bottom:10px;}" +
-            ".game-audio-mute-status.visible{display:block;}";
+            ".game-audio-mute-status.visible{display:block;}" +
+            ".game-audio-volume{width:100%;max-width:500px;display:block;margin:0 auto 16px;accent-color:#2c3e50;}";
         document.head.appendChild(style);
     }
 
