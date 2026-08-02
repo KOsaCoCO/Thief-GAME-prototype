@@ -8,7 +8,8 @@
 // scene rendering, parallax, monster image, buff-slot box, and
 // random hand draw will all keep working without this file.
 //
-// Requires globals from Start Game.js: getShapeForCard(), paintCard().
+// Requires globals: TOTAL_CARDS, getShapeForCard(), isSpecialCard()
+// (Start Game CardDeck.js) and paintCard() (Start Game.js).
 //
 // Turn flow per player click on a card in their hand:
 //   1. The player's card has a suit S and number N. The arrow buttons
@@ -38,7 +39,9 @@
 (function () {
     "use strict";
 
-    const TOTAL_CARDS    = 36;
+    // TOTAL_CARDS comes from Start Game CardDeck.js (a plain global, same
+    // as getShapeForCard/isSpecialCard) — not redeclared here so the deck
+    // size only ever has one source of truth.
     const INITIAL_HAND   = 6;
 
     // Timings (ms) — tune freely
@@ -77,8 +80,8 @@
 
     // -------- Setup --------
 
-    // The 36 cards are a shared pool — the monster must draw from
-    // the cards NOT already in the player's hand. Reads the player's
+    // The TOTAL_CARDS cards are a shared pool — the monster must draw
+    // from the cards NOT already in the player's hand. Reads the player's
     // hand from the DOM (rendered by Start Game.js a moment earlier).
     function pickInitialMonsterHand() {
         const taken = getPlayerCardIds();

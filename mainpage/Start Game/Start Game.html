@@ -110,6 +110,10 @@
         <div class="bonus-banner" id="bonus-banner" aria-hidden="true"></div>
     </div>
 
+    <!-- Deck definition: how many cards exist and which suit each number
+         is this game (random 50/40/10 triangle/circle/square split).
+         Must load BEFORE Start Game.js — its init calls into here. -->
+    <script src="Start Game CardDeck.js"></script>
     <script src="Start Game.js"></script>
     <!-- Game actions — safe to delete this <script> tag (and the file)
          if it ever breaks; the scene above will keep working. -->

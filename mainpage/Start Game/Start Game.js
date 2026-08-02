@@ -2,18 +2,14 @@
 // - Verifies all parallax layers loaded
 // - Picks a random monster sprite for the middleground each page load
 // - Renders a hand of 5 random cards at the bottom of the screen
+//
+// Card/suit definitions (TOTAL_CARDS, getShapeForCard, isSpecialCard,
+// pickSpecialTriangles) now live in Start Game CardDeck.js, which loads
+// before this file — this file just calls them like any other global.
 
-const TOTAL_CARDS         = 36;
-const HAND_SIZE           = 5;
-const NUM_BUFF_SLOTS      = 6;
-const SPECIAL_TRIANGLES_N = 5;
-const SVG_NS              = "http://www.w3.org/2000/svg";
-
-// Set of card IDs that are "special triangles" this game session.
-// A special triangle grants a bonus take after its primary attack:
-// the player (or monster) gets to grab one extra circle/square from
-// the field. The "+" indicator is drawn via .card.special in CSS.
-const SPECIAL_TRIANGLES = new Set();
+const HAND_SIZE      = 5;
+const NUM_BUFF_SLOTS = 6;
+const SVG_NS         = "http://www.w3.org/2000/svg";
 
 // Monster sprites — add more filenames here to expand the pool.
 const MONSTER_FILES = [
@@ -23,35 +19,6 @@ const MONSTER_FILES = [
 ];
 
 // ---- Cards ----
-
-// Distribution: cards 1-12 circle, 13-18 square, 19-36 triangle (12/6/18).
-function getShapeForCard(cardNumber) {
-    if (cardNumber <= 12) return "circle";
-    if (cardNumber <= 18) return "square";
-    return "triangle";
-}
-
-function isSpecialCard(cardId) {
-    return SPECIAL_TRIANGLES.has(cardId);
-}
-
-// Picks SPECIAL_TRIANGLES_N random triangle card IDs and marks them as
-// special for this game session. Called once during init.
-function pickSpecialTriangles() {
-    SPECIAL_TRIANGLES.clear();
-    const triangles = [];
-    for (let i = 1; i <= TOTAL_CARDS; i++) {
-        if (getShapeForCard(i) === "triangle") triangles.push(i);
-    }
-    for (let i = triangles.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [triangles[i], triangles[j]] = [triangles[j], triangles[i]];
-    }
-    for (let i = 0; i < Math.min(SPECIAL_TRIANGLES_N, triangles.length); i++) {
-        SPECIAL_TRIANGLES.add(triangles[i]);
-    }
-    console.log("Special triangles this game:", [...SPECIAL_TRIANGLES].sort((a, b) => a - b));
-}
 
 function buildShape(shape) {
     const svg = document.createElementNS(SVG_NS, "svg");
@@ -190,6 +157,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    assignCardShapes();       // must run before anything else touches a card's shape
     pickSpecialTriangles();   // must run BEFORE renderHand so the + indicator is added
     pickRandomMonster();
     renderBuffSlots();

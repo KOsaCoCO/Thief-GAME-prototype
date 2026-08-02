@@ -27,15 +27,21 @@ body {
     justify-content: center;
 }
 
-/* 6 x 6 grid of portrait rectangles. */
+/* A row of 5 reference cards (3 suits + the "+" marker + the Snatch &
+   Guess reward) — wraps on narrow viewports instead of overflowing. */
 .gallery {
-    height: 100%;
-    aspect-ratio: 2 / 3;
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    grid-template-rows: repeat(6, 1fr);
-    gap: 8px;
+    height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 3vw;
     transition: filter 0.35s ease, opacity 0.35s ease;
+}
+
+.gallery .card {
+    height: 50vh;
+    aspect-ratio: 2 / 3;
 }
 
 /* Card cell — the shape sits centered behind/around the number. */
@@ -88,6 +94,67 @@ body {
     font-weight: bold;
     font-size: 1rem;
     line-height: 1;
+}
+
+/* ---- Special card types (adapted from Start Game.css — this page
+   doesn't link that stylesheet, so both reference styles are kept
+   here, independent and simplified for a static gallery card). ---- */
+
+/* "+" marker card: a blank card face with just this corner indicator,
+   explaining the special-triangle bonus mechanic. */
+.card.special::before {
+    content: "+";
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    font-size: 1.6em;
+    line-height: 1;
+    font-weight: bold;
+    color: #f1c40f;                /* gold */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    z-index: 3;
+}
+
+/* Snatch & Guess reward card: dark-red shimmering sleeve with a cross. */
+@keyframes cardInfoSpecialShimmer {
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(139, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.55);
+    }
+    50% {
+        box-shadow: 0 0 26px rgba(220, 30, 30, 1),
+                    0 0 38px rgba(139, 0, 0, 0.7),
+                    0 6px 16px rgba(0, 0, 0, 0.55);
+    }
+}
+
+.card.special-bonus-card {
+    position: relative;
+    background-color: #5b1a1a;
+    background-image: repeating-linear-gradient(
+        45deg,
+        #722525 0,
+        #722525 8px,
+        #5b1a1a 8px,
+        #5b1a1a 16px
+    );
+    color: transparent;
+    overflow: hidden;
+    animation: cardInfoSpecialShimmer 1.8s ease-in-out infinite;
+}
+
+.card.special-bonus-card:hover {
+    background-color: #5b1a1a;   /* override the generic .card:hover invert */
+}
+
+.card.special-bonus-card .special-cross {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2.8rem;
+    font-weight: 900;
+    color: #ffffff;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
 /* ---- Card detail overlay ---- */
