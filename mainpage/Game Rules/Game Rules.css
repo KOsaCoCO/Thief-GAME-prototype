@@ -49,6 +49,22 @@ body {
     font-weight: bold;
 }
 
+.rules-intro {
+    font-size: 1.1rem;
+    color: #555;
+    text-align: center;
+    margin-bottom: 36px;
+}
+
+.rules-list a {
+    color: #2c3e50;
+    font-weight: bold;
+}
+
+.rules-list a:hover {
+    text-decoration: none;
+}
+
 /* Back button — stays fixed in upper-left corner while the page scrolls */
 .back-link {
     position: fixed;

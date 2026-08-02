@@ -329,6 +329,7 @@
                         : correctMatches[Math.floor(Math.random() * correctMatches.length)];
                     console.log(`[actions] Correct ${playerCall} call -> monster plays ${monsterCardId}`);
                     monsterPlaysCard(monsterCardId);
+                    awardGambleBoosterPip();
                 } else {
                     console.log(`[actions] Wrong ${playerCall} call (suit matched, direction off) -> player loses card`);
                     playerLosesCard(cardEl, cardId, shape);
@@ -345,6 +346,28 @@
         if (shape === "square")   return "square";
         if (shape === "triangle") return "triangle";
         return shape;
+    }
+
+    // A correct gamble call earns a "+" pip on one random card already in
+    // the player's hand — any suit, stacking up to CardBoosters' ceiling.
+    // No new card is created; this just marks an existing one. Backed by
+    // Start Game CardBoosters.js (via CardDeck.js's bare-global bridge).
+    function awardGambleBoosterPip() {
+        if (!window.GameBoosters || typeof GameBoosters.addPlus !== "function") return;
+
+        const handCards = document.querySelectorAll(
+            ".hand .card:not(.losing):not(.special-bonus-card)"
+        );
+        if (handCards.length === 0) return;
+
+        const target = handCards[Math.floor(Math.random() * handCards.length)];
+        const cardId = Number(target.dataset.cardId);
+        const shape  = target.dataset.shape;
+
+        const newCount = GameBoosters.addPlus(cardId);
+        if (typeof paintCard === "function") paintCard(target, cardId, shape);   // refresh the "+" display
+
+        console.log(`[actions] Correct gamble bonus: card #${cardId} now has ${newCount} plus pip(s).`);
     }
 
     // -------- Status popup --------

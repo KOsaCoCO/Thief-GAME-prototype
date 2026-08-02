@@ -110,6 +110,10 @@
         <div class="bonus-banner" id="bonus-banner" aria-hidden="true"></div>
     </div>
 
+    <!-- Live per-card "+" booster tracking for this session. Safe to
+         delete — cards simply stop carrying pluses, everything else
+         keeps working. Loads before CardDeck.js, which seeds it. -->
+    <script src="Start Game CardBoosters.js"></script>
     <!-- Deck definition: how many cards exist and which suit each number
          is this game (random 50/40/10 triangle/circle/square split).
          Must load BEFORE Start Game.js — its init calls into here. -->

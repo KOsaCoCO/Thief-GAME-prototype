@@ -341,16 +341,14 @@
         unarm();
         detachFieldTargetListeners();
 
-        // Special-triangle bonus: if the attacker was a special triangle, the
-        // player gets to take one extra higher-suit (circle/square) field
-        // card before the monster's turn.
-        const attackerIsSpecialTriangle =
-            (playerShape === "triangle") &&
-            (typeof isSpecialCard === "function") &&
-            isSpecialCard(playerCardId);
+        // "+" bonus: any card carrying a plus pip (see Start Game
+        // CardBoosters.js — no longer just the starting special triangles)
+        // lets the player take one extra higher-suit (circle/square) field
+        // card per pip before the monster's turn.
+        const plusPips = (typeof getPlusCount === "function") ? getPlusCount(playerCardId) : 0;
 
-        if (attackerIsSpecialTriangle && hasHigherSuitFieldCards()) {
-            enterBonusPick(() => setTimeout(triggerMonsterBattleTurn, 500));
+        if (plusPips > 0 && hasHigherSuitFieldCards()) {
+            enterBonusPickMultiple(plusPips, () => setTimeout(triggerMonsterBattleTurn, 500));
         } else {
             setTimeout(triggerMonsterBattleTurn, 700);
         }
@@ -406,7 +404,24 @@
         }
     }
 
-    // -------- Player bonus pick (special triangle ability) --------
+    // -------- Player bonus pick ("+" pip ability) --------
+
+    // Runs enterBonusPick() up to `times` times in a row (one per plus
+    // pip on the attacking card) — stops early if the player skips
+    // (Esc) or the field runs out of circle/square cards to grab.
+    function enterBonusPickMultiple(times, onFinish) {
+        if (times <= 0 || !hasHigherSuitFieldCards()) {
+            if (onFinish) onFinish();
+            return;
+        }
+        enterBonusPick((skipped) => {
+            if (skipped) {
+                if (onFinish) onFinish();
+                return;
+            }
+            enterBonusPickMultiple(times - 1, onFinish);
+        });
+    }
 
     function enterBonusPick(onFinish) {
         bonusPickPending = true;

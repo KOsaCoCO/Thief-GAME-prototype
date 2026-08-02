@@ -128,25 +128,29 @@
             GameBonusAction.update();
         }
 
-        // Special-triangle bonus for the monster: if the attacker is a
-        // special triangle, the monster auto-takes one higher-suit
-        // (circle/square) field card.
-        const monShape = getShapeForCard(monCardId);
-        if (
-            monShape === "triangle" &&
-            typeof isSpecialCard === "function" &&
-            isSpecialCard(monCardId)
-        ) {
-            const bonusTargets = document.querySelectorAll(
-                ".monster-field .card[data-shape='circle'], .monster-field .card[data-shape='square']"
-            );
-            if (bonusTargets.length > 0) {
+        // "+" bonus for the monster: any card carrying a plus pip (see
+        // Start Game CardBoosters.js — no longer just special triangles)
+        // lets the monster auto-take one extra higher-suit (circle/square)
+        // field card per pip.
+        const monPlusPips = (typeof getPlusCount === "function") ? getPlusCount(monCardId) : 0;
+        if (monPlusPips > 0) {
+            let grabbed = 0;
+            for (let i = 0; i < monPlusPips; i++) {
+                const bonusTargets = document.querySelectorAll(
+                    ".monster-field .card[data-shape='circle'], .monster-field .card[data-shape='square']"
+                );
+                if (bonusTargets.length === 0) break;
                 const pick = bonusTargets[Math.floor(Math.random() * bonusTargets.length)];
                 const bonusId = Number(pick.dataset.cardId);
                 pick.remove();
                 GameActions.addToMonsterHand(bonusId);
-                GameActions.showPopup(`Bonus take! Monster also grabbed card #${bonusId}.`);
+                grabbed++;
                 console.log(`[ai-brain] Monster bonus take: card ${bonusId}`);
+            }
+            if (grabbed > 0) {
+                GameActions.showPopup(
+                    `Bonus take! Monster also grabbed ${grabbed > 1 ? grabbed + " extra cards" : "an extra card"}.`
+                );
             }
         }
 

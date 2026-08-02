@@ -54,7 +54,8 @@ function paintCard(cardEl, cardId, shape) {
     num.textContent = cardId;
     cardEl.appendChild(num);
 
-    // Mark/unmark the "+" indicator for special-triangle cards.
+    // Mark/unmark the "+" indicator — any card can carry one now (see
+    // Start Game CardBoosters.js), not just the starting special triangles.
     cardEl.classList.toggle("special", isSpecialCard(cardId));
 }
 
@@ -157,6 +158,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    if (window.GameBoosters && typeof GameBoosters.reset === "function") {
+        GameBoosters.reset();   // wipe any pluses left over from a previous game
+    }
     assignCardShapes();       // must run before anything else touches a card's shape
     pickSpecialTriangles();   // must run BEFORE renderHand so the + indicator is added
     pickRandomMonster();

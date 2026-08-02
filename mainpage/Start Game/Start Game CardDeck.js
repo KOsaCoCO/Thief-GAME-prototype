@@ -7,10 +7,15 @@
 // / 40% circle / 10% square split, freshly reshuffled each time this
 // page loads.
 //
-// getShapeForCard()/isSpecialCard() stay bare globals (no window.*
-// wrapper), same as before — every other Start Game file keeps
-// calling them exactly as it always has. Only the numbers moved here,
-// not the contract, so nothing downstream needed to change.
+// getShapeForCard()/isSpecialCard()/getPlusCount() stay bare globals
+// (no window.* wrapper), same as before — every other Start Game file
+// keeps calling them exactly as it always has. Only the numbers moved
+// here, not the contract, so nothing downstream needed to change.
+//
+// isSpecialCard()/getPlusCount() are now a thin pass-through to
+// Start Game CardBoosters.js's live per-card "+" tracking — that file
+// is the actual source of truth, this is just the familiar-named door
+// into it (see pickSpecialTriangles() below for the seeding step).
 //
 // SEPARATE on purpose: delete this file + its <script> tag and only
 // the deck definition goes with it — every caller already guards with
@@ -18,7 +23,9 @@
 // "function"`, so the rest of the game degrades instead of crashing.
 //
 // Must load BEFORE Start Game.js — its DOMContentLoaded handler calls
-// assignCardShapes() and pickSpecialTriangles() from here.
+// assignCardShapes() and pickSpecialTriangles() from here. Should also
+// load AFTER Start Game CardBoosters.js so pickSpecialTriangles() has
+// something to seed pluses into (guarded either way).
 // =============================================================
 
 const TOTAL_CARDS         = 60;
@@ -31,12 +38,6 @@ const SUIT_SHARE = { triangle: 0.5, circle: 0.4, square: 0.1 };
 // assignCardShapes() before anything else (hand render, monster draw,
 // special-triangle picks) touches a card.
 const CARD_SHAPES = new Map();
-
-// Set of card IDs that are "special triangles" this game session.
-// A special triangle grants a bonus take after its primary attack:
-// the player (or monster) gets to grab one extra circle/square from
-// the field. The "+" indicator is drawn via .card.special in CSS.
-const SPECIAL_TRIANGLES = new Set();
 
 // Shuffles 1..TOTAL_CARDS and hands out shapes by SUIT_SHARE using
 // exact counts (not a per-card coin flip), so the split lands on
@@ -69,14 +70,25 @@ function getShapeForCard(cardNumber) {
     return CARD_SHAPES.get(cardNumber) || "circle";
 }
 
-function isSpecialCard(cardId) {
-    return SPECIAL_TRIANGLES.has(cardId);
+// How many "+" pips a card currently carries (0 if none). Backed by
+// Start Game CardBoosters.js's live tracking.
+function getPlusCount(cardId) {
+    return (window.GameBoosters && typeof GameBoosters.getPlusCount === "function")
+        ? GameBoosters.getPlusCount(cardId)
+        : 0;
 }
 
-// Picks SPECIAL_TRIANGLES_N random triangle card IDs and marks them as
-// special for this game session. Must run AFTER assignCardShapes().
+function isSpecialCard(cardId) {
+    return getPlusCount(cardId) > 0;
+}
+
+// Picks SPECIAL_TRIANGLES_N random triangle card IDs and gives each one
+// its starting "+" pip for this game session, via GameBoosters — so a
+// handful of triangles start the game already marked. Must run AFTER
+// assignCardShapes() (needs real shapes) and GameBoosters.reset().
 function pickSpecialTriangles() {
-    SPECIAL_TRIANGLES.clear();
+    if (!window.GameBoosters || typeof GameBoosters.addPlus !== "function") return;
+
     const triangles = [];
     for (let i = 1; i <= TOTAL_CARDS; i++) {
         if (getShapeForCard(i) === "triangle") triangles.push(i);
@@ -85,8 +97,7 @@ function pickSpecialTriangles() {
         const j = Math.floor(Math.random() * (i + 1));
         [triangles[i], triangles[j]] = [triangles[j], triangles[i]];
     }
-    for (let i = 0; i < Math.min(SPECIAL_TRIANGLES_N, triangles.length); i++) {
-        SPECIAL_TRIANGLES.add(triangles[i]);
-    }
-    console.log("Special triangles this game:", [...SPECIAL_TRIANGLES].sort((a, b) => a - b));
+    const picked = triangles.slice(0, Math.min(SPECIAL_TRIANGLES_N, triangles.length));
+    picked.forEach((id) => GameBoosters.addPlus(id));
+    console.log("Starting + triangles this game:", picked.sort((a, b) => a - b));
 }
