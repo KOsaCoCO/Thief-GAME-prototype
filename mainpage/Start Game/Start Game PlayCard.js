@@ -397,10 +397,12 @@
             GameBonusAction.update();
         }
 
-        // The monster's reaction to the placement lives in
-        // Start Game AI_brain.js.
+        // The monster's reaction to the placement lives in Start Game
+        // AI_brain.js. Pass the placed card's ID so the monster only ever
+        // considers THIS card — not other player-owned cards already
+        // sitting on the field from earlier turns.
         if (window.GameAI && typeof GameAI.onPlayerPlacedCard === "function") {
-            GameAI.onPlayerPlacedCard();
+            GameAI.onPlayerPlacedCard(cardId);
         }
     }
 

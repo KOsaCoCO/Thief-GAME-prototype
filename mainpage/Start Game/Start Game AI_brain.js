@@ -169,49 +169,54 @@
 
     // -------- Player places a card (Play Card, no attack) --------
     // Fires right after the player lays a card onto the field via the
-    // "Place Card" button. Weighs the monster's hand against every
-    // player-owned field card (the one just placed, plus anything
-    // already there):
-    //   - If any monster card can beat one (same suit-hierarchy rule as
+    // "Place Card" button. PlayCard.js passes the ID of the card that
+    // was just placed — the monster only ever reacts to THAT card, never
+    // to other player-owned cards already sitting on the field from
+    // earlier turns (those already had their own chance to be reacted to
+    // when they were placed).
+    //   - If any monster card can beat it (same suit-hierarchy rule as
     //     GamePlay.canBeat): it stacks that card on top of the target,
     //     then both cards return to the monster's hand. The stack/hold/
     //     fly visuals live in Start Game AI_brain Animations.js.
-    //   - If nothing can beat anything: the monster gives up one of its
-    //     own cards straight into the player's hand (not the field).
+    //   - If nothing can beat it: the monster gives up one of its own
+    //     cards straight into the player's hand (not the field).
     //
     // While the beat is in progress, the target is "contested" (see
     // claimContest/resolveContest below) — Start Game TugOfWar.js lets
     // the player click it to fight for the card instead of losing it
     // automatically once the animation finishes.
-    function onPlayerPlacedCard() {
+    function onPlayerPlacedCard(placedCardId) {
         if (!window.GameActions || !window.GamePlay || typeof getShapeForCard !== "function") return;
+
+        // A previous placement's monster reaction is still unresolved
+        // (auto-animating or an active tug-of-war). Starting a second one
+        // now would overwrite activeContest and orphan the first — the
+        // first card's eventual resolution would then wrongly apply to
+        // the second contest's card. Skip reacting to this placement
+        // until the first one settles.
+        if (activeContest) return;
 
         const monsterHand = GameActions.getMonsterHand();
         if (monsterHand.length === 0) return;   // nothing to react with
 
-        const fieldTargets = Array.from(
-            document.querySelectorAll(".monster-field .card[data-owner='player']")
+        // The ONLY valid target is the card the player just placed.
+        const target = document.querySelector(
+            `.monster-field .card[data-owner='player'][data-card-id="${placedCardId}"]`
+        );
+        if (!target) return;   // couldn't find it — nothing to react to
+        const targetShape = target.dataset.shape;
+
+        const beaters = monsterHand.filter((monCardId) =>
+            GamePlay.canBeat(getShapeForCard(monCardId), monCardId, targetShape, placedCardId)
         );
 
-        const pairs = [];
-        for (const monCardId of monsterHand) {
-            const monShape = getShapeForCard(monCardId);
-            for (const target of fieldTargets) {
-                const targetId    = Number(target.dataset.cardId);
-                const targetShape = target.dataset.shape;
-                if (GamePlay.canBeat(monShape, monCardId, targetShape, targetId)) {
-                    pairs.push({ monCardId, target, targetId });
-                }
-            }
-        }
-
-        if (pairs.length === 0) {
+        if (beaters.length === 0) {
             giveUpCardToPlayer();
             return;
         }
 
-        const choice = pairs[Math.floor(Math.random() * pairs.length)];
-        beatFieldCard(choice);
+        const monCardId = beaters[Math.floor(Math.random() * beaters.length)];
+        beatFieldCard({ monCardId, target, targetId: placedCardId });
     }
 
     // Can't beat anything on the field — hand one random monster card
@@ -271,6 +276,12 @@
     // if there's nothing to claim (stale click, already resolved, etc.).
     function claimContest(cardEl) {
         if (!activeContest || activeContest.resolved || activeContest.target !== cardEl) return null;
+        // Safeguard: the element the player clicked must still carry the
+        // exact card ID this contest was created for. Combined with the
+        // onPlayerPlacedCard() re-entry guard above, this should never
+        // actually fail — it's the last line of defense against ever
+        // handing back a different card than the one the player clicked.
+        if (Number(cardEl.dataset.cardId) !== activeContest.targetId) return null;
         activeContest.resolved  = true;
         activeContest.wasClaimed = true;   // so resolveContest() knows this went through a tug-of-war
         if (activeContest.anim && typeof activeContest.anim.cancel === "function") {
