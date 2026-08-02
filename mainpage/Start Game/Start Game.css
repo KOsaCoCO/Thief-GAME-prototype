@@ -1187,21 +1187,25 @@ body.snatch-penalty .monster-field .card {
     50%      { transform: rotate(5deg); }
 }
 
-/* -------- AI brain: idle-gamble "announce" banner --------
+/* -------- AI brain: flashy announcement banner --------
    Built by Start Game AI_brain Animations.js's showFlashyText(), which
    sets top/left inline (10px below the monster sprite's bottom edge);
-   everything else — the look, the pulse — lives here. */
+   everything else — the look, the pulse — lives here. Reused for the
+   idle-gamble announce and the Play Card snatch's telegraph line, so
+   it wraps rather than overflowing on longer messages. */
 .ai-flashy-text {
     position: fixed;
     transform: translateX(-50%);
+    max-width: 80vw;
     padding: 10px;
     background-color: rgba(20, 20, 20, 0.85);
     color: #f1c40f;
     font-weight: bold;
     font-size: 1.1rem;
+    text-align: center;
+    white-space: normal;
     border: 2px solid #f1c40f;
     border-radius: 8px;
-    white-space: nowrap;
     z-index: 250;
     pointer-events: none;
     animation: aiFlashyPulse 0.5s ease-in-out infinite alternate;
@@ -1210,6 +1214,21 @@ body.snatch-penalty .monster-field .card {
 @keyframes aiFlashyPulse {
     from { transform: translateX(-50%) scale(1);    box-shadow: 0 0 10px rgba(241, 196, 15, 0.6); }
     to   { transform: translateX(-50%) scale(1.06); box-shadow: 0 0 22px rgba(241, 196, 15, 1); }
+}
+
+/* -------- AI brain: monster "phone buzz" vibrate --------
+   Telegraphs a Play Card snatch (Start Game AI_brain.js's
+   tryBattleSnatch()) before the card actually leaves the field. High
+   specificity (#monster, not just a class) so it reliably overrides
+   body.timer-fast's monsterShiver if both ever land at once. */
+#monster.ai-vibrate {
+    animation: aiMonsterVibrate 0.1s linear infinite;
+}
+
+@keyframes aiMonsterVibrate {
+    0%, 100% { transform: translateX(-50%)             translateY(0); }
+    25%      { transform: translateX(calc(-50% - 6px)) translateY(0); }
+    75%      { transform: translateX(calc(-50% + 6px)) translateY(0); }
 }
 
 /* -------- Special bonus card (awarded after a bonus round) --------
@@ -1576,4 +1595,38 @@ body.tug-mode .scene {
     width: 50%;
     background-color: #2980b9;   /* player's side, fills from the left */
     transition: width 0.15s ease;
+}
+
+/* -------- Tug of War hotkey badge (Start Game TugOfWar.js) --------
+   Pinned above a card offered via offerHotkey() — top/left set inline,
+   pointed at that card. Pressing E claims it and jumps straight into
+   the tug-of-war. Built/torn down entirely in JS, styled here. */
+.tug-hotkey-badge {
+    position: fixed;
+    transform: translate(-50%, -100%);
+    width: 46px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: #ffffff;
+    background: linear-gradient(180deg, #ff9d2f, #ff3b0f);
+    border: 3px solid #ffde59;
+    border-radius: 10px;
+    z-index: 260;
+    pointer-events: none;
+    animation: tugHotkeyPulse 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes tugHotkeyPulse {
+    from {
+        transform: translate(-50%, -100%) scale(1);
+        box-shadow: 0 0 10px rgba(255, 87, 34, 0.8), 0 0 18px rgba(255, 61, 0, 0.6);
+    }
+    to {
+        transform: translate(-50%, -100%) scale(1.12);
+        box-shadow: 0 0 22px rgba(255, 140, 0, 1), 0 0 34px rgba(255, 61, 0, 0.9);
+    }
 }

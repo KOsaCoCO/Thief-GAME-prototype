@@ -117,6 +117,22 @@
     // card zooming toward the monster on a correct guess; the monster's
     // revealed card slipping into the player's hand on a wrong one).
 
+    // Shakes the monster sprite like a phone buzzing — used to telegraph
+    // a move before it actually happens (e.g. AI_brain.js's
+    // tryBattleSnatch()). Calls onComplete once the buzz ends.
+    function vibrateMonster(durationMs, onComplete) {
+        const monster = document.getElementById("monster");
+        if (!monster) {
+            if (onComplete) onComplete();
+            return;
+        }
+        monster.classList.add("ai-vibrate");
+        setTimeout(() => {
+            monster.classList.remove("ai-vibrate");
+            if (onComplete) onComplete();
+        }, durationMs);
+    }
+
     // A short pulsing banner below the monster sprite, 10px under its
     // bottom edge. Purely decorative — caller owns removing it (also
     // auto-removes itself after durationMs as a safety net).
@@ -187,6 +203,7 @@
     // -------- Public API --------
     window.GameAIAnimations = {
         playBeatSequence,
+        vibrateMonster,
         showFlashyText,
         flyCardToElement,
         jumpSlot,

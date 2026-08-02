@@ -38,6 +38,13 @@
 //       playerHasValidPlay, endBattle, canBeat, isActive) via
 //       window.GamePlay.
 //
+//   IDLE NUDGE (repeating): if the player goes 1.5s inside an active
+//     session without placing or attempting an attack, GameAI.onPlayCardIdle()
+//     fires (this file just owns the timer). The monster may play a
+//     card of its own onto the field and offer a hotkey (E) that lets
+//     the player jump straight into a tug-of-war for it — Start Game
+//     TugOfWar.js owns that badge/input.
+//
 //   END BATTLE:
 //     - Player clicks "End Battle" or presses Escape.
 //     - Cards left on the field stay there for future battles.
@@ -50,6 +57,32 @@
     let onDoneCallback    = null;
     let battleActive      = false;
     let bonusPickPending  = false;  // waiting for the player to pick a bonus higher-suit card
+
+    // Repeats for as long as the player goes quiet inside an active
+    // session: 1.5s after the last placement/attack ATTEMPT (armed but
+    // not committed doesn't count), the monster gets an idle nudge —
+    // decision lives in Start Game AI_brain.js (GameAI.onPlayCardIdle).
+    const PLAY_CARD_IDLE_MS = 1500;
+    let playCardIdleTimer = null;
+
+    function resetPlayCardIdleTimer() {
+        if (playCardIdleTimer) clearTimeout(playCardIdleTimer);
+        playCardIdleTimer = null;
+        if (!battleActive) return;
+        playCardIdleTimer = setTimeout(() => {
+            playCardIdleTimer = null;
+            if (!battleActive) return;
+            if (window.GameAI && typeof GameAI.onPlayCardIdle === "function") {
+                GameAI.onPlayCardIdle();
+            }
+            resetPlayCardIdleTimer();   // schedule the next check — this one repeats
+        }, PLAY_CARD_IDLE_MS);
+    }
+
+    function stopPlayCardIdleTimer() {
+        if (playCardIdleTimer) clearTimeout(playCardIdleTimer);
+        playCardIdleTimer = null;
+    }
 
     // -------- Entry / exit --------
 
@@ -118,11 +151,14 @@
         updatePlaceButton();
 
         document.addEventListener("keydown", onEscape);
+
+        resetPlayCardIdleTimer();   // starts the first 1.5s countdown
     }
 
     function endBattle() {
         if (!battleActive) return;
         battleActive = false;
+        stopPlayCardIdleTimer();
 
         // Clean up any in-flight bonus-pick state.
         if (bonusPickPending) {
@@ -296,6 +332,11 @@
     // -------- Player attack --------
 
     function attemptAttack(playerHandEl, targetFieldEl) {
+        // The player just TRIED to take a card from the field — counts
+        // as activity for the idle nudge whether the attack succeeds or
+        // fails below.
+        resetPlayCardIdleTimer();
+
         const playerCardId = Number(playerHandEl.dataset.cardId);
         const playerShape  = playerHandEl.dataset.shape;
         const targetCardId = Number(targetFieldEl.dataset.cardId);
@@ -389,6 +430,8 @@
     }
 
     function placeArmedCard() {
+        resetPlayCardIdleTimer();   // the player just acted — restart the countdown
+
         const cardEl = armedCardEl;
         const cardId = Number(cardEl.dataset.cardId);
         const shape  = cardEl.dataset.shape;

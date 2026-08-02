@@ -520,7 +520,14 @@
     // the player's still deciding what to do. No suit check, and this
     // can't be contested — the tug-of-war mechanic is unrelated and
     // only ever applies to the "beat a placed card" flow above.
-    const BATTLE_SNATCH_CHANCE = 0.15;
+    //
+    // Telegraphed before it happens (not tug-of-war-able, but still
+    // visible coming): the monster sprite buzzes, then a flashy line
+    // announces it, THEN — only after both — the card actually leaves
+    // the field. Visuals live in Start Game AI_brain Animations.js.
+    const BATTLE_SNATCH_CHANCE      = 0.15;
+    const BATTLE_SNATCH_VIBRATE_MS  = 500;
+    const BATTLE_SNATCH_ANNOUNCE_MS = 1500;
 
     function tryBattleSnatch() {
         if (!window.GameActions || !window.GamePlay) return;
@@ -539,13 +546,120 @@
 
             const target = targets[Math.floor(Math.random() * targets.length)];
             const cardId = Number(target.dataset.cardId);
-            target.remove();
-            GameActions.addToMonsterHand(cardId);
-            GameActions.showPopup(`Monster snatched card #${cardId} from the field!`);
-            console.log(`[ai-brain] Battle snatch: card ${cardId}`);
 
-            refreshIfBattleActive();
+            const doSnatch = () => {
+                // Re-check: the battle could have ended, or this exact
+                // card could have been taken some other way, during the
+                // vibrate + announce telegraph.
+                if (typeof GamePlay.isActive !== "function" || !GamePlay.isActive()) return;
+                if (!target.isConnected) return;
+                target.remove();
+                GameActions.addToMonsterHand(cardId);
+                console.log(`[ai-brain] Battle snatch: card ${cardId}`);
+                refreshIfBattleActive();
+            };
+
+            if (window.GameAIAnimations && typeof GameAIAnimations.vibrateMonster === "function") {
+                GameAIAnimations.vibrateMonster(BATTLE_SNATCH_VIBRATE_MS, () => {
+                    if (typeof GameAIAnimations.showFlashyText === "function") {
+                        GameAIAnimations.showFlashyText(
+                            "Monster has used it's privilege..\nas a monster and snatched the card!",
+                            BATTLE_SNATCH_ANNOUNCE_MS
+                        );
+                    }
+                    setTimeout(doSnatch, BATTLE_SNATCH_ANNOUNCE_MS);
+                });
+            } else {
+                doSnatch();
+            }
         }, 900 + Math.random() * 600);
+    }
+
+    // -------- Play-card session: idle nudge (repeating) --------
+    // Called by Start Game PlayCard.js every time the player goes 1.5s
+    // inside an active Play Card session without placing a card or
+    // attempting an attack. Unlike tryBattleSnatch() above, this
+    // repeats for as long as the player stays idle. The monster plays
+    // one of its own cards onto the field, and the player gets a
+    // hotkey (E) offer to immediately start a tug-of-war for it instead
+    // of having to arm a card and beat it the normal suit-hierarchy
+    // way. Visuals/input for the hotkey itself live in Start Game
+    // TugOfWar.js; this file only decides the card and the outcome.
+
+    // The field card currently on offer via the hotkey (at most one at
+    // a time — a fresh idle nudge won't fire again while one is still
+    // unclaimed). null once resolved (hotkey pressed, or the card was
+    // taken some other way and TugOfWar.js noticed and cleared its offer).
+    let hotkeyCard = null;
+
+    function onPlayCardIdle() {
+        if (!window.GameActions || !window.GamePlay) return;
+        if (typeof GamePlay.isActive !== "function" || !GamePlay.isActive()) return;
+
+        // A previous offer is still live — don't stack a second one. But
+        // if that card left the field some other way (a normal suit-
+        // hierarchy attack, not the hotkey), this is the only place
+        // that would notice — TugOfWar.js clears its OWN badge/offer
+        // when that happens, but has no way to tell this file. Treat a
+        // detached cardEl as stale and clear it so nudges can resume.
+        if (hotkeyCard) {
+            if (hotkeyCard.cardEl && hotkeyCard.cardEl.isConnected) return;
+            hotkeyCard = null;
+        }
+
+        const monsterHand = GameActions.getMonsterHand();
+        if (monsterHand.length === 0) return;
+
+        const cardId = monsterHand[Math.floor(Math.random() * monsterHand.length)];
+        GameActions.removeFromMonsterHand(cardId);
+        GameActions.dropMonsterSlot(cardId);
+        GameActions.placeCardOnField(cardId, "monster");
+
+        const cardEl = document.querySelector(
+            `.monster-field .card[data-owner='monster'][data-card-id="${cardId}"]`
+        );
+        if (!cardEl) return;   // shouldn't happen, but stay defensive
+
+        hotkeyCard = { cardId, cardEl };
+        GameActions.showPopup(`Monster played card #${cardId} on the field — press E to fight for it!`);
+        refreshIfBattleActive();
+
+        if (window.GameTugOfWar && typeof GameTugOfWar.offerHotkey === "function") {
+            GameTugOfWar.offerHotkey(cardEl);
+        }
+    }
+
+    // Called by Start Game TugOfWar.js when the player presses the
+    // hotkey. Returns a truthy value to confirm the offer is still
+    // valid (TugOfWar.js only starts the tug-of-war if this doesn't
+    // return null/undefined).
+    function claimHotkeyCard(cardEl) {
+        if (!hotkeyCard || hotkeyCard.cardEl !== cardEl) return null;
+        return true;
+    }
+
+    // Settles the hotkey-offered tug-of-war. Unlike resolveContest()
+    // above, there's only ever one card in play here — no separate
+    // attacker to hand back to the monster.
+    function resolveHotkeyCard(winner) {
+        if (!hotkeyCard) return;
+        const { cardId, cardEl } = hotkeyCard;
+        hotkeyCard = null;
+
+        if (cardEl && cardEl.isConnected) cardEl.remove();
+
+        if (winner === "player") {
+            GameActions.addCardToPlayerHand(cardId);
+            GameActions.showPopup(`You pulled card #${cardId} away from the monster!`);
+        } else {
+            GameActions.addToMonsterHand(cardId);
+            GameActions.showPopup(`Monster kept hold of card #${cardId}.`);
+        }
+
+        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
+            GameBonusAction.update();
+        }
+        refreshIfBattleActive();
     }
 
     // -------- Public API --------
@@ -557,9 +671,13 @@
         tryIdlePlayCard,
         idleGamble,           // idleGamble(onDone?) — onDone fires once fully resolved
         tryBattleSnatch,       // called once per Play Card session by PlayCard.js
+        onPlayCardIdle,        // called by PlayCard.js every 1.5s of in-session inactivity
         // Used by Start Game TugOfWar.js to hijack a contested card.
         claimContest,
         resolveContest,
+        // Used by Start Game TugOfWar.js for the hotkey-offered card.
+        claimHotkeyCard,
+        resolveHotkeyCard,
     };
 
 })();
