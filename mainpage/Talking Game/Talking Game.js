@@ -14,9 +14,10 @@
 //      the player has used so far — and keeps doing that forever.
 //
 // This file does NOT decide what a word means (that's Dialogue
-// Brain.js) and does NOT save anything itself (that's Player
-// Dictionary.js) — it just connects the page's boxes and buttons to
-// those two files.
+// Brain.js), does NOT decide if the player was addressing the
+// monster or someone else (that's Address Brain.js), and does NOT
+// save anything itself (that's Player Dictionary.js) — it just
+// connects the page's boxes and buttons to those files.
 // =============================================================
 
 (function () {
@@ -74,7 +75,13 @@
     }
 
     // ---- Step 4: work out and show the NEXT question ----
-    function askNextQuestion() {
+    // "lastAnswerWords" is the tokenized version of whatever the
+    // player just typed (empty/undefined on the very first question,
+    // since there's no previous answer yet). It's passed straight
+    // through to Dialogue Brain.js so it can check with Address
+    // Brain.js whether this answer deserves a direct reply instead of
+    // a random new question.
+    function askNextQuestion(lastAnswerWords) {
         // Still have fixed questions left? Ask the next one in order.
         if (fixedQuestionsAsked < FIXED_QUESTIONS.length) {
             showQuestion(FIXED_QUESTIONS[fixedQuestionsAsked]);
@@ -85,7 +92,7 @@
         // Out of fixed questions — let the Dialogue Brain make one up
         // from the player's own words.
         if (window.DialogueBrain) {
-            showQuestion(window.DialogueBrain.generateQuestion());
+            showQuestion(window.DialogueBrain.generateQuestion(lastAnswerWords));
         }
     }
 
@@ -103,7 +110,7 @@
         }
 
         inputEl.value = "";   // clear the box, ready for the next answer
-        askNextQuestion();
+        askNextQuestion(words);
     }
 
     // ---- Set everything up once the page has finished loading ----
