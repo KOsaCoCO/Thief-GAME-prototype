@@ -3,7 +3,8 @@ const PAGES = {
     start: "Start Game/Start Game.html",
     rules: "Game Rules/Game Rules.html",
     cards: "Card Info/Card Info.html",
-    settings: "Settings/Settings.html"
+    settings: "Settings/Settings.html",
+    talking: "Talking Game/Talking Game.html"
 };
 
 document.addEventListener("DOMContentLoaded", () => {

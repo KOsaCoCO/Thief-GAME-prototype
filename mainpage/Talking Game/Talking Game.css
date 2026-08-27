@@ -1,0 +1,125 @@
+/* =============================================================
+   Talking Game — page styling
+   -------------------------------------------------------------
+   The page is split into two halves, side by side:
+     LEFT  = a big monster picture, close up.
+     RIGHT = a chat-style window: the current question on top, and
+             a box underneath where the player types their answer.
+   ============================================================= */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #333;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* The two-column layout described above. */
+.talking-page {
+    display: flex;
+    height: 100vh;
+}
+
+/* ---- LEFT SIDE: monster picture ---- */
+.monster-side {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+    background-color: #1c1c1c;
+    overflow: hidden;
+}
+
+.monster-image {
+    height: 100vh;
+    max-width: none;           /* let the picture be as wide as it needs */
+    object-fit: contain;
+    object-position: left bottom;   /* "close up" on the left side */
+}
+
+/* ---- RIGHT SIDE: chat window ---- */
+.chat-side {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #f4f4f4;
+    padding: 40px;
+}
+
+.chat-window {
+    width: 100%;
+    max-width: 480px;
+    background-color: #ffffff;
+    border: 2px solid #2c3e50;
+    border-radius: 12px;
+    padding: 28px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.question-label {
+    font-size: 0.9rem;
+    color: #888888;
+    margin-bottom: 6px;
+}
+
+.question-text {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 24px;
+    line-height: 1.4;
+}
+
+.answer-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 6px;
+}
+
+.answer-input {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 1rem;
+    font-family: inherit;
+    border: 2px solid #2c3e50;
+    border-radius: 8px;
+}
+
+.answer-input:focus {
+    outline: none;
+    border-color: #2980b9;
+}
+
+/* ---- Back to Main Menu button (same look as the rest of the site) ---- */
+.back-link {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    padding: 10px 18px;
+    font-weight: bold;
+    color: #2c3e50;
+    background-color: #ffffff;
+    text-decoration: none;
+    border: 2px solid #2c3e50;
+    border-radius: 6px;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+    z-index: 1000;
+}
+
+.back-link:hover {
+    background-color: #2c3e50;
+    color: #fff;
+}
+
+.back-link:active {
+    transform: scale(0.97);
+}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Talking Game</title>
+    <link rel="stylesheet" href="Talking Game.css">
+</head>
+<body>
+    <a href="../mainpage.html" class="back-link">&larr; Main Menu</a>
+
+    <div class="talking-page">
+        <!-- LEFT SIDE: a big monster picture, close up -->
+        <div class="monster-side">
+            <img id="monster-image" class="monster-image" alt="A curious monster" src="">
+        </div>
+
+        <!-- RIGHT SIDE: the monster's question, and a box to type an answer -->
+        <div class="chat-side">
+            <div class="chat-window">
+                <p class="question-label">The monster asks:</p>
+                <p id="question-text" class="question-text">...</p>
+
+                <label class="answer-label" for="answer-input">Your answer:</label>
+                <input
+                    id="answer-input"
+                    class="answer-input"
+                    type="text"
+                    placeholder="Type your answer and press Enter"
+                    autocomplete="off"
+                >
+            </div>
+        </div>
+    </div>
+
+    <!-- Load order matters here: storage first (pure data), then the
+         thinking that reads that data, then the page controller that
+         ties the page's buttons/boxes to both of them. -->
+    <script src="Player Dictionary.js"></script>
+    <script src="Dialogue Brain.js"></script>
+    <script src="Talking Game.js"></script>
+</body>
+</html>
