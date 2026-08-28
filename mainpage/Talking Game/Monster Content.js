@@ -211,6 +211,41 @@
         endsWithPeriodOnly: ["literal", "neutral", "notAnOrder"],
     };
 
+    // ---- Step 3b: phrase-based intents ----
+    // Unlike "/tags" (an exact symbol the player types on purpose)
+    // these are ordinary PHRASES — Engine.js's classify() scans the
+    // cleaned sentence for each pattern, no special syntax needed
+    // from the player. Two so far:
+    //   "feelings"     — the player is naming or describing a feeling
+    //                    directly ("I feel...", "makes me feel...").
+    //   "hypothetical" — the player is speaking about something
+    //                    IMAGINED rather than something real ("what
+    //                    if...", "suppose...", "if I were..."). This
+    //                    one matters a lot to a mimicry monster —
+    //                    hypotheticals expose how someone thinks
+    //                    without anything having to be true yet.
+    // Add more phrase intents here the same way — an id, a weight,
+    // and a list of regexes checked against the CLEANED sentence
+    // (contractions already expanded, so match "i am", not "i'm").
+    const phraseIntents = [
+        {
+            id: "feelings", weight: 2.5,
+            patterns: [
+                /\bi feel\b/, /\bi am feeling\b/, /\bmakes me feel\b/,
+                /\bfeels like\b/, /\bmy feelings\b/, /\bhurts my feelings\b/,
+            ],
+        },
+        {
+            id: "hypothetical", weight: 2.5,
+            patterns: [
+                /\bwhat if\b/, /\bwhat would happen if\b/, /\bimagine if\b/,
+                /\bimagine that\b/, /\bsuppose\b/, /\blet us say\b/,
+                /\bif i were\b/, /\bif you were\b/,
+                /\bwould you ever\b/, /\bwould you rather\b/, /\bhypothetically\b/,
+            ],
+        },
+    ];
+
     // ---- Step 4: how tone moves trust and mood ----
     const trustNudges = {
         positive: 1, warm: 1, affectionate: 1, genuine: 1, comforting: 1, notHostile: 1,
@@ -218,11 +253,12 @@
     };
     const moodNudges = {
         joking: 1, lightHearted: 1, teasing: 1, badJoke: 1, copingWithHumor: 1,
+        hypothetical: 1,
         veryUpset: -1, threat: -1, littleUpset: -1, negative: -1,
     };
 
     // Intents that make an episode more likely to be recalled later.
-    const importantIntents = ["threat", "romantic", "serious", "veryUpset", "genuine", "address_monster"];
+    const importantIntents = ["threat", "romantic", "serious", "veryUpset", "genuine", "address_monster", "feelings", "hypothetical"];
 
     // ---- Step 5: permanent facts the monster can learn ----
     // Store {value, turn, confidence}, never a bare string — see
@@ -323,6 +359,30 @@
         { id: "notAnOrder", intents: ["notAnOrder"], cooldown: 4, lines: ["Not an order. I'll do it anyway — this time.", "Just a request, then. Ask nicely again and I might listen."] },
         { id: "notAQuestion", intents: ["notAQuestion"], cooldown: 4, lines: ["Not a question, just so we're clear. I heard it as one anyway.", "Rhetorical or not, I'm still going to answer it."] },
         { id: "notYelling", intents: ["notYelling"], cooldown: 4, lines: ["Not yelling, you say. It certainly got louder in my head.", "Fine — not yelling. I heard you regardless."] },
+    ];
+
+    // ---- Step 6b2: one rule per phrase-based intent ----
+    // Same idea as the tag-reaction rules above, but triggered by
+    // ordinary phrasing (see `phraseIntents` above) instead of a
+    // typed "/tag".
+    const phraseIntentRules = [
+        {
+            id: "feelings", intents: ["feelings"], cooldown: 3, priority: 0.3,
+            lines: ["A feeling, named out loud. Those are worth more to me than facts.", "Say more about how that feels. I want the shape of it exactly."],
+        },
+        {
+            // Hypotheticals matter more to this monster than almost
+            // anything else the player can say — an imagined answer
+            // still reveals something true, without anything having
+            // actually happened yet.
+            id: "hypothetical", intents: ["hypothetical"], cooldown: 3, priority: 0.5,
+            lines: [
+                "A hypothetical? Even better than the truth — go on.",
+                "Let's pretend it's real for a moment. What happens next?",
+                "You didn't have to answer that honestly, and you still told me something true.",
+            ],
+            followups: ["What does that tell you about yourself?", "Would you actually do it, given the chance?"],
+        },
     ];
 
     // ---- Step 6c: address rules — who is the player talking to? ----
@@ -458,11 +518,12 @@
         dynamicPronouns: dynamicPronouns,
         tagToneMap: tagToneMap,
         punctuationNudges: punctuationNudges,
+        phraseIntents: phraseIntents,
         trustNudges: trustNudges,
         moodNudges: moodNudges,
         importantIntents: importantIntents,
         slots: slots,
-        rules: introRules.concat(tagReactionRules, addressRules, categoryRules, [whFramesRule], trustRules),
+        rules: introRules.concat(tagReactionRules, phraseIntentRules, addressRules, categoryRules, [whFramesRule], trustRules),
         fallbackDeflections: fallbackDeflections,
         vocabulary: vocabulary,
         starters: starters,

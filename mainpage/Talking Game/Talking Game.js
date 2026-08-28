@@ -66,12 +66,18 @@
             ? debug.debts.map(function (d) { return "\"" + d.text + "\" [" + d.status + "]"; }).join(", ")
             : "—";
 
+        const learnedKeys = Object.keys(debug.learned);
+        const learnedText = learnedKeys.length
+            ? learnedKeys.map(function (word) { return word + " → " + debug.learned[word]; }).join(", ")
+            : "—";
+
         document.getElementById("debug-turn").textContent = debug.turn;
         document.getElementById("debug-trust").textContent = debug.trust;
         document.getElementById("debug-mood").textContent = debug.mood;
         document.getElementById("debug-topics").textContent = topicsText;
         document.getElementById("debug-facts").textContent = factsText;
         document.getElementById("debug-debts").textContent = debtsText;
+        document.getElementById("debug-learned").textContent = learnedText;
     }
 
     // ---- Handle the player pressing Enter in the input box ----

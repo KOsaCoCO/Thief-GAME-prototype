@@ -125,14 +125,13 @@
         "who's": "who is", "let's": "let us",
     };
 
-    const AFFIRM_WORDS = ["yes", "yeah", "yep", "sure", "affirmative", "totally", "definitely", "correct"];
-    const DENY_WORDS = ["no", "nope", "nah", "never", "negative", "incorrect"];
-
-    // ---- Every entity type a real player word can carry ----
-    // Kept as its own list (not scattered as string literals) since
-    // several gates below need to say "any REAL content word", not a
-    // specific one.
-    const CONTENT_TOPIC_TYPES = ["food", "tools", "names", "actions", "emotions"];
+    const AFFIRM_WORDS = ["yes", "yeah", "yep", "yup", "sure", "affirmative", "totally", "definitely", "correct", "right", "indeed", "absolutely", "certainly", "agreed", "exactly", "true"];
+    const DENY_WORDS = ["no", "nope", "nah", "never", "negative", "incorrect", "wrong", "false", "not"];
+    // Words that FLIP whichever affirm/deny word they sit right next
+    // to ("not" is also its own DENY_WORD for a bare "not really",
+    // but here it's checked as a NEIGHBOR of another polarity word —
+    // see detectPolarity() below).
+    const NEGATION_TRIGGERS = ["not", "never"];
 
     // =========================================================
     // STAGE 0 (setup) — the shared state object
@@ -152,6 +151,7 @@
             variant: {},   // { key: lastIndexUsed } — no-repeat rendering
             trust: 0,      // -5..10, moved by tone
             mood: 0,       // -2..2, lightly smoothed by tone
+            learnedCategories: {}, // { word: guessedCategory } — see classify()
         };
     }
 
@@ -163,6 +163,9 @@
             // Guard against a corrupted or half-written save — start
             // fresh rather than crash the page.
             if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.working)) return newState();
+            // Backfill fields added after some saves already existed,
+            // so an older save doesn't crash on a missing property.
+            if (!parsed.learnedCategories) parsed.learnedCategories = {};
             return parsed;
         } catch (error) {
             console.warn("[engine] Could not read saved state — starting fresh.", error);
@@ -180,6 +183,32 @@
 
     function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    // ---- Deciding yes/no, without one "not" anywhere wrecking it ----
+    // The old version set ONE negated flag for the whole sentence, so
+    // "I'm not lying, yes I am human" read as a denial just because
+    // "not" appeared somewhere earlier — the "not" had nothing to do
+    // with "yes". This instead only flips an affirm/deny word when a
+    // negation trigger sits in the two tokens right before IT
+    // specifically — adjacency, not "anywhere in the sentence".
+    function detectPolarity(tokens) {
+        let affirm = false;
+        let deny = false;
+
+        tokens.forEach(function (word, index) {
+            const isAffirmWord = AFFIRM_WORDS.indexOf(word) !== -1;
+            const isDenyWord = DENY_WORDS.indexOf(word) !== -1;
+            if (!isAffirmWord && !isDenyWord) return;
+
+            const precedingWords = tokens.slice(Math.max(0, index - 2), index);
+            const flipped = precedingWords.some(function (t) { return NEGATION_TRIGGERS.indexOf(t) !== -1; });
+
+            if (flipped ? isDenyWord : isAffirmWord) affirm = true;
+            if (flipped ? isAffirmWord : isDenyWord) deny = true;
+        });
+
+        return { affirm: affirm, deny: deny };
     }
 
     // =========================================================
@@ -201,11 +230,7 @@
         const tokens = clean ? clean.split(" ") : [];
 
         const keywords = tokens.filter(function (t) { return !STOPWORDS.has(t) && t.length > 1; });
-
-        const negated = /\b(not|never|no)\b/.test(clean);
-        const affirm = tokens.some(function (t) { return AFFIRM_WORDS.indexOf(t) !== -1; }) && !negated;
-        const deny = tokens.some(function (t) { return DENY_WORDS.indexOf(t) !== -1; }) ||
-            (tokens.some(function (t) { return AFFIRM_WORDS.indexOf(t) !== -1; }) && negated);
+        const polarity = detectPolarity(tokens);
 
         return {
             raw: String(raw),      // kept for "/tag" scanning — clean strips the "/"
@@ -213,9 +238,8 @@
             tokens: tokens,
             keywords: keywords,
             isQuestion: isQuestion,
-            negated: negated,
-            affirm: affirm,
-            deny: deny,
+            affirm: polarity.affirm,
+            deny: polarity.deny,
             resolved: [],           // filled in by resolveRefs()
             intents: [],            // filled in by classify()
             entities: [],           // filled in by classify()
@@ -317,6 +341,18 @@
             });
         });
 
+        // ---- Phrase-based intents ----
+        // Unlike "/tags" (an exact symbol) or address pronouns (single
+        // words), these are whole PHRASES scanned against the cleaned
+        // sentence — "what if", "i feel", "suppose"... See Monster
+        // Content.js's `phraseIntents` for the actual pattern lists;
+        // this is generic enough that any content file could define
+        // its own set of phrases to watch for.
+        (content.phraseIntents || []).forEach(function (intent) {
+            const matched = intent.patterns.some(function (pattern) { return pattern.test(nlu.clean); });
+            if (matched) scores[intent.id] = (scores[intent.id] || 0) + (intent.weight || 2);
+        });
+
         // "them" used but nothing to bind it to — still worth a reply.
         const thirdPartyTokenUsed = nlu.tokens.some(function (t) { return content.dynamicPronouns[t]; });
         const thirdPartyResolved = nlu.resolved.some(function (r) { return content.dynamicPronouns[r.pronoun]; });
@@ -336,16 +372,60 @@
             .sort(function (a, b) { return b.score - a.score; });
 
         // Built from nlu.tokens (not nlu.keywords) so each word still
-        // knows what came right before it — content.categorize() uses
-        // that to tell apart a word like "saw" the tool from "saw"
-        // the verb ("I saw a movie"). See Monster Content.js's
-        // AMBIGUOUS_WORDS for how that guardrail works.
+        // knows what came right before it and where it sits in the
+        // sentence. Two passes:
+        //   1. Categorize normally — content.categorize() (the static
+        //      list + the "saw"-style homograph guardrail), or
+        //      whatever category we already LEARNED for this exact
+        //      word on a past turn (see pass 2 and Player learning,
+        //      below).
+        //   2. Anything STILL uncategorized gets grouped with
+        //      whichever OTHER real-category word in this SAME
+        //      sentence sits closest to it — e.g. an unknown word
+        //      sitting right next to "pizza" gets treated as "food"
+        //      too. That guess is then remembered in
+        //      state.learnedCategories, so next time the monster sees
+        //      that exact word again, it already knows the group —
+        //      literally the monster building its own vocabulary out
+        //      of what the player has said, which is the whole point
+        //      of this game.
         const entities = [];
         nlu.tokens.forEach(function (word, index) {
             if (STOPWORDS.has(word) || word.length <= 1) return;
             const prevWord = index > 0 ? nlu.tokens[index - 1] : null;
-            entities.push({ id: word, type: content.categorize(word, prevWord) });
+            let type = content.categorize(word, prevWord);
+            if (type === "uncategorized" && state.learnedCategories[word]) {
+                type = state.learnedCategories[word];
+            }
+            entities.push({ id: word, type: type, tokenIndex: index });
         });
+
+        // Snapshot BEFORE any inferring happens, so one guess can't
+        // cascade into the next (an inferred word shouldn't then act
+        // as an "anchor" for its own neighbor — only real, originally-
+        // categorized words should).
+        const originalTypes = entities.map(function (e) { return e.type; });
+
+        entities.forEach(function (entity, entityIndex) {
+            if (originalTypes[entityIndex] !== "uncategorized") return;
+
+            let closestType = null;
+            let closestDistance = Infinity;
+            entities.forEach(function (other, otherIndex) {
+                if (otherIndex === entityIndex || originalTypes[otherIndex] === "uncategorized") return;
+                const distance = Math.abs(other.tokenIndex - entity.tokenIndex);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestType = originalTypes[otherIndex];
+                }
+            });
+
+            if (closestType) {
+                entity.type = closestType;
+                state.learnedCategories[entity.id] = closestType;
+            }
+        });
+
         nlu.resolved.forEach(function (ref) {
             if (!entities.some(function (e) { return e.id === ref.entityId; })) {
                 entities.push({ id: ref.entityId, type: ref.entityType });
@@ -704,6 +784,7 @@
                 return acc;
             }, {}),
             debts: state.debts.map(function (d) { return { text: d.text, status: d.status }; }),
+            learned: state.learnedCategories,
         };
     }
 
