@@ -1,23 +1,18 @@
 // =============================================================
 // Talking Game — PAGE CONTROLLER
 // -------------------------------------------------------------
-// This file runs the actual conversation on the page:
-//   1. Shows a random monster picture when the page opens.
-//   2. Asks two fixed questions first, in this order:
-//        "Are you human?"
-//        "Do you like hearts or livers?"
-//   3. Every time the player types an answer and presses Enter, it
-//      splits that answer into separate words and hands them to
-//      Player Dictionary.js to remember.
-//   4. Once both fixed questions have been asked, it asks
-//      Dialogue Brain.js to invent a new question out of the words
-//      the player has used so far — and keeps doing that forever.
+// This file is deliberately thin. It does three things:
+//   1. Shows a random monster picture and the very first line
+//      (Engine.greet()) when the page loads.
+//   2. Sends whatever the player types to Engine.respond() when they
+//      press Enter, and shows whatever line comes back.
+//   3. Keeps the debug panel in sync with the engine's state after
+//      every turn.
 //
-// This file does NOT decide what a word means (that's Dialogue
-// Brain.js), does NOT decide if the player was addressing the
-// monster or someone else (that's Address Brain.js), and does NOT
-// save anything itself (that's Player Dictionary.js) — it just
-// connects the page's boxes and buttons to those files.
+// It does NOT decide what anything MEANS or SAYS — that's Engine.js
+// (the pipeline) and Monster Content.js (the persona/rules) doing
+// all of the real work. This file just connects the page's boxes and
+// buttons to Engine.respond()/Engine.greet().
 // =============================================================
 
 (function () {
@@ -32,98 +27,83 @@
         "../Start Game/images/monster_3.png",
     ];
 
-    // The two questions the monster always asks first, in this exact
-    // order. Once both have been asked, askNextQuestion() below
-    // switches over to Dialogue Brain.js instead.
-    const FIXED_QUESTIONS = [
-        "Are you human?",
-        "Do you like hearts or livers?",
-    ];
+    // The engine's own state for this player — loaded once, then
+    // carried through every turn. See Engine.js for its shape and
+    // Engine.saveState()/loadState() for how it survives a refresh.
+    let state = null;
 
-    // How many of the fixed questions we've already asked.
-    let fixedQuestionsAsked = 0;
-
-    // ---- Step 1: show a random monster picture ----
+    // ---- Show a random monster picture ----
     function showRandomMonster() {
         const monsterImageEl = document.getElementById("monster-image");
         if (!monsterImageEl) return;
-
         const randomIndex = Math.floor(Math.random() * MONSTER_IMAGES.length);
         monsterImageEl.src = MONSTER_IMAGES[randomIndex];
     }
 
-    // ---- Step 2: turn a typed sentence into a clean list of words ----
-    // Example: "I really like Pizza!!" becomes:
-    //   ["i", "really", "like", "pizza"]
-    function splitIntoWords(sentence) {
-        return sentence
-            .toLowerCase()
-            // Replace anything that ISN'T a letter or a number with a
-            // space, so punctuation like "!" or "," never sticks to a word.
-            .replace(/[^a-z0-9]+/g, " ")
-            .trim()
-            .split(" ")
-            .filter(function (word) {
-                return word.length > 0;   // drop any empty leftovers
-            });
-    }
-
-    // ---- Step 3: display whatever the current question is ----
-    function showQuestion(questionText) {
+    // ---- Display whatever the monster just said ----
+    function showQuestion(text) {
         const questionEl = document.getElementById("question-text");
-        if (questionEl) questionEl.textContent = questionText;
+        if (questionEl) questionEl.textContent = text;
     }
 
-    // ---- Step 4: work out and show the NEXT question ----
-    // "lastAnswerWords" is the tokenized version of whatever the
-    // player just typed (empty/undefined on the very first question,
-    // since there's no previous answer yet). It's passed straight
-    // through to Dialogue Brain.js so it can check with Address
-    // Brain.js whether this answer deserves a direct reply instead of
-    // a random new question.
-    function askNextQuestion(lastAnswerWords) {
-        // Still have fixed questions left? Ask the next one in order.
-        if (fixedQuestionsAsked < FIXED_QUESTIONS.length) {
-            showQuestion(FIXED_QUESTIONS[fixedQuestionsAsked]);
-            fixedQuestionsAsked = fixedQuestionsAsked + 1;
-            return;
-        }
+    // ---- Debug panel: a plain, read-only view of the engine state ----
+    // Shows the current turn/trust/mood, the topic stack, the fact
+    // table, and any open debts — see Engine.js's buildDebugSnapshot().
+    function renderDebugPanel(debug) {
+        const panelEl = document.getElementById("debug-panel");
+        if (!panelEl || !debug) return;
 
-        // Out of fixed questions — let the Dialogue Brain make one up
-        // from the player's own words.
-        if (window.DialogueBrain) {
-            showQuestion(window.DialogueBrain.generateQuestion(lastAnswerWords));
-        }
+        const topicsText = debug.topics.length
+            ? debug.topics.map(function (t) { return t.id + " (" + t.type + ", " + t.weight + ")"; }).join(", ")
+            : "—";
+
+        const factKeys = Object.keys(debug.facts);
+        const factsText = factKeys.length
+            ? factKeys.map(function (key) { return key + ": " + debug.facts[key]; }).join(", ")
+            : "—";
+
+        const debtsText = debug.debts.length
+            ? debug.debts.map(function (d) { return "\"" + d.text + "\" [" + d.status + "]"; }).join(", ")
+            : "—";
+
+        document.getElementById("debug-turn").textContent = debug.turn;
+        document.getElementById("debug-trust").textContent = debug.trust;
+        document.getElementById("debug-mood").textContent = debug.mood;
+        document.getElementById("debug-topics").textContent = topicsText;
+        document.getElementById("debug-facts").textContent = factsText;
+        document.getElementById("debug-debts").textContent = debtsText;
     }
 
-    // ---- Step 5: handle the player pressing Enter in the input box ----
+    // ---- Handle the player pressing Enter in the input box ----
     function onAnswerSubmitted() {
         const inputEl = document.getElementById("answer-input");
-        if (!inputEl) return;
+        if (!inputEl || !window.Engine) return;
 
         const answerText = inputEl.value;
-        if (answerText.trim().length === 0) return;   // ignore empty answers
+        if (answerText.trim().length === 0) return; // ignore empty answers
 
-        const words = splitIntoWords(answerText);
-        if (window.PlayerDictionary) {
-            window.PlayerDictionary.addWords(words);
-        }
+        const result = window.Engine.respond(answerText, state, window.MonsterContent);
+        showQuestion(result.text);
+        renderDebugPanel(result.debug);
 
-        inputEl.value = "";   // clear the box, ready for the next answer
-        askNextQuestion(words);
+        inputEl.value = "";
     }
 
     // ---- Set everything up once the page has finished loading ----
     document.addEventListener("DOMContentLoaded", function () {
         showRandomMonster();
-        askNextQuestion();   // shows the very first question
+
+        if (window.Engine && window.MonsterContent) {
+            state = window.Engine.loadState();
+            const greeting = window.Engine.greet(state, window.MonsterContent);
+            showQuestion(greeting.text);
+            renderDebugPanel(greeting.debug);
+        }
 
         const inputEl = document.getElementById("answer-input");
         if (inputEl) {
             inputEl.addEventListener("keydown", function (event) {
-                if (event.key === "Enter") {
-                    onAnswerSubmitted();
-                }
+                if (event.key === "Enter") onAnswerSubmitted();
             });
         }
     });

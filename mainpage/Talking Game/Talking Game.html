@@ -33,14 +33,29 @@
         </div>
     </div>
 
-    <!-- Load order matters here: storage first (pure data), then the
-         grammar-fixer and the address-detector the thinking file
-         leans on, then the thinking itself, then the page controller
-         that ties the page's buttons/boxes to all four. -->
-    <script src="Player Dictionary.js"></script>
+    <!-- DEBUG PANEL: a plain, read-only look at the engine's state,
+         for authoring/testing. Safe to delete along with its CSS in
+         Talking Game.css if this ever needs to become player-facing
+         only — nothing else on the page depends on it. -->
+    <div id="debug-panel" class="debug-panel">
+        <p class="debug-title">Engine state (debug)</p>
+        <p><span class="debug-label">Turn:</span> <span id="debug-turn">0</span>
+           &nbsp;&nbsp;<span class="debug-label">Trust:</span> <span id="debug-trust">0</span>
+           &nbsp;&nbsp;<span class="debug-label">Mood:</span> <span id="debug-mood">0</span></p>
+        <p><span class="debug-label">Topics:</span> <span id="debug-topics">—</span></p>
+        <p><span class="debug-label">Facts:</span> <span id="debug-facts">—</span></p>
+        <p><span class="debug-label">Debts:</span> <span id="debug-debts">—</span></p>
+    </div>
+
+    <!-- Load order: the generic pipeline (Engine.js) and the content
+         it runs (Monster Content.js) can load in either order, since
+         nothing calls into either until the page has fully loaded —
+         but Word Correction.js has to exist before Engine.js's render
+         stage might reach for it. Talking Game.js (the page
+         controller) always loads last. -->
     <script src="Word Correction.js"></script>
-    <script src="Address Brain.js"></script>
-    <script src="Dialogue Brain.js"></script>
+    <script src="Monster Content.js"></script>
+    <script src="Engine.js"></script>
     <script src="Talking Game.js"></script>
 </body>
 </html>

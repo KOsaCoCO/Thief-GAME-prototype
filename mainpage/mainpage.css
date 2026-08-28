@@ -5,10 +5,14 @@
     box-sizing: border-box;
 }
 
+/* Dark theme — ONLY for this main menu page. This file
+   (mainpage.css) is never loaded by Talking Game.html, which keeps
+   its own separate stylesheet (Talking Game.css), so none of this
+   theme carries over once the player clicks through. */
 body {
     font-family: Arial, Helvetica, sans-serif;
-    background-color: #f4f4f4;
-    color: #333;
+    background-color: #121212;
+    color: #ffffff;
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -22,7 +26,7 @@ body {
 
 #greeting {
     font-size: 3rem;
-    color: #2c3e50;
+    color: #ffffff;
     margin-bottom: 40px;
 }
 
@@ -39,17 +43,29 @@ body {
     padding: 16px 24px;
     font-size: 1.1rem;
     font-weight: bold;
-    color: #2c3e50;
-    background-color: #ffffff;
-    border: 2px solid #2c3e50;
+    color: #ffffff;
+    background-color: transparent;
+    border: 2px solid #ffffff;
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
 }
 
 .menu-btn:hover {
-    background-color: #2c3e50;
-    color: #ffffff;
+    background-color: #ffffff;
+    color: #121212;
+}
+
+/* Reset Game — same shape as the other buttons, but a warning color
+   so it doesn't get mistaken for a normal navigation button. */
+.menu-btn-reset {
+    color: #e07a5f;
+    border-color: #e07a5f;
+}
+
+.menu-btn-reset:hover {
+    background-color: #e07a5f;
+    color: #121212;
 }
 
 .menu-btn:active {

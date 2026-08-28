@@ -123,3 +123,38 @@ body {
 .back-link:active {
     transform: scale(0.97);
 }
+
+/* ---- Debug panel: a fixed strip along the bottom of the screen ----
+   The page itself hides overflow (see body, above), so this has to
+   be fixed-positioned to be visible at all rather than just flowing
+   below .talking-page. Small and out of the way on purpose — it's an
+   authoring tool, not part of the game's presentation. */
+.debug-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 32vh;
+    overflow-y: auto;
+    background-color: rgba(10, 10, 10, 0.88);
+    color: #d7e4ea;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    padding: 10px 18px;
+    z-index: 900;
+}
+
+.debug-title {
+    font-weight: bold;
+    color: #ffffff;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+}
+
+.debug-label {
+    color: #7fb8c9;
+    font-weight: bold;
+}
