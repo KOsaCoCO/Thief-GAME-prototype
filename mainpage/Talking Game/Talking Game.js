@@ -68,12 +68,14 @@
 
         const learnedKeys = Object.keys(debug.learned);
         const learnedText = learnedKeys.length
-            ? learnedKeys.map(function (word) { return word + " → " + debug.learned[word]; }).join(", ")
+            ? learnedKeys.map(function (word) { return word + " → " + (debug.learned[word].path || debug.learned[word].family); }).join(", ")
             : "—";
 
         document.getElementById("debug-turn").textContent = debug.turn;
         document.getElementById("debug-trust").textContent = debug.trust;
         document.getElementById("debug-mood").textContent = debug.mood;
+        document.getElementById("debug-voice-stage").textContent = debug.voiceStage;
+        document.getElementById("debug-max-tier").textContent = debug.maxTier;
         document.getElementById("debug-topics").textContent = topicsText;
         document.getElementById("debug-facts").textContent = factsText;
         document.getElementById("debug-debts").textContent = debtsText;

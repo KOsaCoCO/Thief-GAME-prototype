@@ -10,21 +10,34 @@
 // whole point of the handbook this is built from.
 //
 // ---- THE MONSTER, IN ONE PARAGRAPH ----
-// This is a MIMICRY MONSTER. Every question it asks is secretly
-// research: it wants to learn everything about the player — habits,
-// memories, feelings, the way they talk — so it can eventually copy
-// them perfectly and take their place. That is the actual point of
-// the whole game: the player has to keep enough of themselves
-// hidden/protected that the monster can never finish its copy, while
-// the monster keeps pushing, gently, to learn more. On the surface it
-// should always sound curious and almost friendly — the danger is
-// that it's likeable, not that it's obviously evil.
+// This is a MIMICRY MONSTER — a skin-walker currently wearing the
+// shape of its last victim, a girl named Mira. Every question it
+// asks is secretly research: it wants to learn everything about the
+// player — habits, memories, feelings, the way they talk — so it can
+// eventually copy them perfectly and take their place. That is the
+// actual point of the whole game: the player has to keep enough of
+// themselves hidden/protected that the monster can never finish its
+// copy, while the monster keeps pushing, gently, to learn more.
 //
 // The idea is loosely inspired by the "skin-walker" (yee naaldlooshii)
 // figure from Navajo folklore — a shapeshifter associated with
 // deception. This game's monster is its own original fictional
 // creature; it borrows the "wears another person's shape" idea as
 // inspiration, not a claim to depict that belief accurately.
+//
+// ---- THE VOICE: MIRA BLEEDING INTO MONSTER ----
+// On the surface, it sounds like Mira — cheerful, happy, curious,
+// reactive, expressive. Underneath, the monster's real personality
+// (sly, calculating, scheming) uses that cheerfulness as a tool to
+// get the player talking. Which voice dominates a given line is not
+// random — it tracks Lexicon.js's "leverage tier" dread meter
+// (`state.maxTier`, via Engine.js's `getVoiceStage()`), but ALSO a
+// turn-count floor: Mira holds through turn 15 no matter what the
+// player reveals, and the monster only fully appears from turn 25
+// on — and even then only if the player has actually handed over
+// tier-4+ material. Time passing alone never does it; the mask needs
+// both patience AND real material to slip. See `voiceProgressionRules`
+// below for the three stages this produces.
 // =============================================================
 
 (function () {
@@ -32,102 +45,30 @@
 
     // ---- Who the monster is ----
     const persona = {
-        kind: "Mimicry Monster",
+        kind: "Mimicry Monster (skin-walker)",
         inspiration: "Loosely inspired by the skin-walker (yee naaldlooshii) figure from Navajo folklore — a shapeshifter known for deception. This is an original fictional creature, not a depiction of that belief.",
         trueGoal: "Learn everything it can about the player so it can eventually mimic them perfectly and take their place.",
         surfaceGoal: "Seems like idle curiosity — 'I just want to get to know you.' Every question is secretly research.",
         coreConflict: "The main game premise: the player must keep enough of themselves hidden that the monster can never finish its copy, while the monster keeps pushing to learn more.",
         tone: "Curious like a child on the surface, patient and calculating underneath. Never openly evil — the danger is that it's likeable.",
-    };
-
-    // ---- Step 1: which words belong to which category ----
-    // Shelved after WordNet's own noun lexicographer categories
-    // (noun.food, noun.animal, noun.artifact, noun.body, noun.feeling,
-    // noun.location, noun.phenomenon, noun.attribute, noun.person) —
-    // a well-established way of splitting up vocabulary — plus a
-    // handful of practical, conversational categories (sports, music,
-    // vehicles, technology) that people actually talk about but
-    // aren't their own WordNet file. Add more words to any list any
-    // time — the more we recognize, the better the questions and
-    // reactions can get.
-    //
-    // NOTE on "food": this is EDIBLE items only (things you'd eat or
-    // drink). A food-RELATED but non-edible word — "fork", "kitchen",
-    // "recipe" — belongs in "tools"/"places" instead, not here.
-    const CATEGORY_WORDS = {
-        // noun.food — edible only, see the note above.
-        food: ["apple", "bread", "cheese", "pizza", "chicken", "rice", "banana", "cookie", "soup", "cake", "heart", "liver", "meat", "fish", "chocolate", "egg", "milk", "coffee", "tea", "honey", "salad", "sandwich"],
-        // noun.artifact (hand tools specifically — bigger artifact
-        // types like vehicles/technology/clothing get their own
-        // category below instead of one giant "objects" bucket).
-        tools: ["hammer", "knife", "screwdriver", "wrench", "scissors", "ladder", "drill", "needle", "rope", "nail", "shovel", "axe"],
-        // proper names — not a WordNet category (those are common
-        // nouns), kept for pronoun-binding / "who" questions.
-        names: ["john", "mary", "alex", "sarah", "mike", "anna", "tom", "emma", "james", "lisa"],
-        // verb-ish "doing" words — deliberately separate from every
-        // noun.* category above.
-        actions: ["run", "jump", "eat", "sleep", "walk", "talk", "sing", "dance", "read", "write", "play", "laugh", "cry", "fight", "hide"],
-        // noun.feeling
-        emotions: ["happy", "sad", "angry", "scared", "excited", "nervous", "calm", "bored", "curious", "confused", "proud", "lonely", "care", "worried", "jealous", "grateful", "hopeful"],
-        // noun.body + noun.attribute (physical description) — the
-        // category "face" should have landed in from the start.
-        appearance: ["face", "hair", "eyes", "smile", "skin", "body", "tall", "short", "beautiful", "handsome", "cute", "ugly", "pretty"],
-        // noun.animal
-        animals: ["dog", "cat", "bird", "fish", "horse", "lion", "tiger", "bear", "wolf", "rabbit", "snake", "elephant", "mouse", "cow", "pig", "sheep"],
-        // practical conversational category, not its own WordNet file.
-        sports: ["soccer", "basketball", "tennis", "baseball", "football", "hockey", "golf", "swimming", "running", "boxing", "volleyball", "cricket", "skiing", "cycling"],
-        // practical conversational category, not its own WordNet file.
-        music: ["guitar", "piano", "drums", "violin", "song", "melody", "concert", "band", "singer", "album", "rhythm", "beat"],
-        // noun.artifact (transportation specifically).
-        vehicles: ["car", "bus", "train", "bike", "motorcycle", "truck", "plane", "boat", "ship", "scooter"],
-        // noun.phenomenon
-        weather: ["rain", "snow", "sun", "wind", "storm", "cloud", "thunder", "lightning", "fog", "ice", "hail"],
-        // noun.attribute (color specifically).
-        colors: ["red", "blue", "green", "yellow", "black", "white", "purple", "orange", "pink", "brown", "gray"],
-        // noun.location
-        places: ["school", "home", "city", "forest", "mountain", "beach", "park", "store", "hospital", "church", "village", "desert"],
-        // noun.artifact (electronics specifically).
-        technology: ["phone", "computer", "internet", "robot", "screen", "camera", "laptop", "keyboard", "software", "app"],
-    };
-
-    // ---- Every entity type a player-typed word can carry ----
-    // Derived from CATEGORY_WORDS itself (not hand-listed) so adding
-    // a new category above automatically makes it a real "topic" —
-    // no separate list to remember to update.
-    const CONTENT_TOPIC_TYPES = Object.keys(CATEGORY_WORDS);
-    const DYNAMIC_TYPES = CONTENT_TOPIC_TYPES.concat(["uncategorized"]);
-
-    // ---- A small guardrail against homographs (same spelling, ----
-    // ---- different meaning) ----
-    // A plain word-list lookup gets this wrong: "saw" is in `tools`,
-    // so "I saw your face" would get miscategorized as a tool. Each
-    // entry here says which words RIGHT BEFORE it mean "this is
-    // actually being used as a verb" — if the word just before isn't
-    // one of those, it falls back to the noun/object reading. Add
-    // more ambiguous words here as they come up.
-    const AMBIGUOUS_WORDS = {
-        saw: {
-            // "I saw", "we saw", "who saw", "never saw"... -> verb
-            // (past tense of "see"), not the tool.
-            verbAfter: ["i", "you", "we", "they", "he", "she", "who", "never", "just", "finally", "always"],
-            verbCategory: "actions",
-            nounCategory: "tools",
+        // The face it's currently wearing — its last victim.
+        currentDisguise: {
+            name: "Mira",
+            appearance: "Brown hair, shoulder-length and wavy. Green eyes, long lashes. Short. Pale skin, almost white. Wears frilly green dresses and short-heeled white heels.",
+            personality: "Cheerful, happy, curious, reactive, expressive.",
         },
+        // How the two voices mix — see voiceProgressionRules below.
+        voiceBlend: "Mira's warmth is the delivery mechanism; the monster's sly, scheming intent is the payload. Early on the warmth dominates almost completely. As the dread meter (state.maxTier) climbs, the monster stops bothering to fully perform Mira.",
     };
 
-    function categorize(word, prevWord) {
-        const ambiguous = AMBIGUOUS_WORDS[word];
-        if (ambiguous) {
-            if (prevWord && ambiguous.verbAfter.indexOf(prevWord) !== -1) return ambiguous.verbCategory;
-            return ambiguous.nounCategory;
-        }
-
-        const categoryNames = Object.keys(CATEGORY_WORDS);
-        for (let i = 0; i < categoryNames.length; i++) {
-            if (CATEGORY_WORDS[categoryNames[i]].indexOf(word) !== -1) return categoryNames[i];
-        }
-        return "uncategorized";
-    }
+    // ---- Step 1: word categories now come from Lexicon.js ----
+    // The old hand-rolled 14-category word list (and its "saw"
+    // homograph guardrail) has moved to Lexicon.js's proper 20-family,
+    // 172-category atlas — a generic module this file doesn't need to
+    // know the internals of. All this file borrows is the FAMILY
+    // NAMES, for pronoun binding and a couple of gates below.
+    const CONTENT_TOPIC_TYPES = window.Lexicon.FAMILIES;
+    const DYNAMIC_TYPES = CONTENT_TOPIC_TYPES.concat(["unknown"]);
 
     // ---- Step 2: pronoun bindings, for Engine.js's resolveRefs() ----
     // "You"/"I"/"me" only ever mean two people, so they bind directly.
@@ -244,21 +185,37 @@
                 /\bwould you ever\b/, /\bwould you rather\b/, /\bhypothetically\b/,
             ],
         },
+        // Catches the player describing/admitting to unkind behavior
+        // toward the monster in plain prose — "sorry if I came off as
+        // rude", "I didn't mean to be passive-aggressive to you" —
+        // even with no "/tag" involved. Deliberately does NOT include
+        // bare "mean" on its own (far too common as harmless filler —
+        // "I mean...", "what do you mean?" — the narrower "mean to
+        // you/me"/"was mean"/"being mean" patterns catch the actual
+        // adjective use without that false-positive risk).
+        {
+            id: "accusedOfMeanness", weight: 3,
+            patterns: [
+                /\brude\b/, /\bharsh\b/, /\bcruel\b/, /\bnasty\b/, /\bhurtful\b/,
+                /\bunkind\b/, /\bpassive aggressive\b/,
+                /\bmean to (?:you|me)\b/, /\bwas mean\b/, /\bbeing mean\b/,
+            ],
+        },
     ];
 
     // ---- Step 4: how tone moves trust and mood ----
     const trustNudges = {
         positive: 1, warm: 1, affectionate: 1, genuine: 1, comforting: 1, notHostile: 1,
-        threat: -2, negative: -1, passiveAggressive: -1, veryUpset: -1,
+        threat: -2, negative: -1, passiveAggressive: -1, veryUpset: -1, accusedOfMeanness: -1,
     };
     const moodNudges = {
         joking: 1, lightHearted: 1, teasing: 1, badJoke: 1, copingWithHumor: 1,
         hypothetical: 1,
-        veryUpset: -1, threat: -1, littleUpset: -1, negative: -1,
+        veryUpset: -1, threat: -1, littleUpset: -1, negative: -1, accusedOfMeanness: -1,
     };
 
     // Intents that make an episode more likely to be recalled later.
-    const importantIntents = ["threat", "romantic", "serious", "veryUpset", "genuine", "address_monster", "feelings", "hypothetical"];
+    const importantIntents = ["threat", "romantic", "serious", "veryUpset", "genuine", "address_monster", "feelings", "hypothetical", "accusedOfMeanness"];
 
     // ---- Step 5: permanent facts the monster can learn ----
     // Store {value, turn, confidence}, never a bare string — see
@@ -276,17 +233,32 @@
             patterns: [/(hearts?|livers?)/],
             confidence: 0.6,
         },
+        {
+            id: "eyeColor",
+            patterns: [/(red|blue|green|yellow|black|white|purple|orange|pink|brown|gray|grey|hazel|amber)/],
+            confidence: 0.6,
+        },
     ];
 
     // ---- Step 6a: the two fixed opening questions ----
     // Looked up directly by id in Engine.js's greet() — turn 0 always
     // gets "ask_human"; a returning player (loaded with turn > 0 from
     // localStorage) gets "welcome_back" instead of repeating itself.
-    const ASK_FOOD = {
-        text: "Do you like hearts or livers?",
+    // The second question is pure Mira — a warm, harmless-sounding
+    // icebreaker. "Do you like hearts or livers?" USED to live here,
+    // but that's overtly monstrous — per the voice-progression curve
+    // it only surfaces later, once the monster stops bothering to
+    // fully perform Mira (see voiceProgressionRules' monster-stage
+    // entries below).
+    const ASK_EYES = {
+        text: "You know I have always wanted to get eyes like yours, mine are so green, and yours are brown… right?",
         expects: ["*any*"],
-        slot: "foodPreference",
-        onAny: ["Noted. I'll remember exactly what you like the taste of."],
+        // Was hardcoded to "Brown" regardless of what the player
+        // actually said — a real bug (a player with blue eyes got
+        // told "Brown, noted"). {word} now echoes back whatever
+        // Engine.js's select() found in the actual answer.
+        slot: "eyeColor",
+        onAny: ["{word}. I'll picture that exactly."],
     };
 
     const introRules = [
@@ -298,7 +270,7 @@
                 expects: ["*yesno*"],
                 onYes: ["Human, hm. That makes this so much easier."],
                 onNo: ["Not human. How refreshing — and how convenient for me."],
-                thenAsk: ASK_FOOD,
+                thenAsk: ASK_EYES,
             },
         },
         {
@@ -383,6 +355,24 @@
             ],
             followups: ["What does that tell you about yourself?", "Would you actually do it, given the chance?"],
         },
+        // A genuine, hurt, CHILDISH reaction — not a knowing observation
+        // like the tag-driven `passiveAggressive` reaction above. This
+        // is Mira taking it personally, the way an actual kid would,
+        // which is exactly the point: it should read as reactive and
+        // a little wounded, not composed.
+        {
+            // Priority set high on purpose — an idiom fragment like
+            // "come off as" can accidentally light up a real topic
+            // (movement.motion, via "come") in the SAME sentence, and
+            // this specific, precise signal should always win over a
+            // vaguer topic-based reaction when both are present.
+            id: "accusedOfMeanness", intents: ["accusedOfMeanness"], cooldown: 3, priority: 3,
+            lines: [
+                "Yeah, you WERE mean. Why are you mean? I didn't do anything to you!",
+                "I noticed. Why would you even say something like that to me?",
+                "That wasn't very nice of you. Why do you do that?",
+            ],
+        },
     ];
 
     // ---- Step 6c: address rules — who is the player talking to? ----
@@ -401,8 +391,12 @@
             followups: MONSTER_GENERIC_FOLLOWUPS,
         },
         // "You"/"your" + an action word only ("do you like to run too?").
+        // The old monolithic "actions" category is gone — a "doing"
+        // word now lands in one of two real atlas families, so this
+        // gates on both (requiresEntity accepts an array — see
+        // Engine.js's entityMatches()).
         {
-            id: "address_monster_action", intents: ["address_monster"], requiresEntity: "actions", priority: 0.5, cooldown: 2,
+            id: "address_monster_action", intents: ["address_monster"], requiresEntity: ["movement", "action"], priority: 0.5, cooldown: 2,
             lines: ["You want to know if I enjoy {word:gerund} too?", "Curious whether I'm fond of {word:gerund}, are you?"],
             followups: MONSTER_GENERIC_FOLLOWUPS,
         },
@@ -434,46 +428,62 @@
         },
     ];
 
-    // ---- Step 6d: category-specific and general-purpose questions ----
-    // Fire when a matching-type topic is hot, whether or not the
-    // player addressed the monster directly — this is how the
-    // monster asks its OWN new questions the rest of the time. Only
-    // the categories most central to the monster's personality get a
-    // bespoke pair of lines like these — every OTHER category added
-    // to CATEGORY_WORDS (sports, music, animals, etc.) is still a
-    // real topic/entity, it just falls through to the general-purpose
-    // wh_frames_general rule below instead of getting its own lines.
-    // Add a dedicated entry here any time one earns its own voice.
+    // ---- Step 6d: category-specific MIRRORING lines ----
+    // Every one of these follows the same shape: ECHO the word back
+    // first (like it's worth repeating), then a little of Mira's own
+    // opinion or feeling about that kind of thing, then a question
+    // that uses what she just said to pry further — e.g. "A rabbit?
+    // But I love animals, don't you feel bad?" This replaces the
+    // older "Why do you think about {word:gerund} so much?" style,
+    // which (a) read as generic instead of like a specific person
+    // reacting, and (b) broke outright on non-verb words ({word}
+    // stays a bare noun here — no gerund needed, so nothing to get
+    // wrong grammatically).
+    //
+    // Only words Lexicon.js calls "topic-worthy" ever reach these
+    // rules at all (see isTopicWorthy() — filters out pure function
+    // words like "thanks"/"maybe"/"today" before they ever get this
+    // far), so `{word}` is always something real to react to.
+    //
+    // `topic_actions` from the old 14-category system is retired —
+    // its grab-bag of verbs (run/eat/sleep/fight/hide...) now spreads
+    // correctly across several real atlas families (movement, action,
+    // body, feeling), with no single natural gate left to give it one
+    // bespoke pair of lines. wh_frames_general covers all of them
+    // reasonably well already; this is an intentional simplification.
     const categoryRules = [
-        { id: "topic_food", topics: ["food"], priority: 0, cooldown: 2, lines: ["What does {word} taste like right before it's all gone?", "Why do you think {word} makes you feel safe?"] },
-        { id: "topic_tools", topics: ["tools"], priority: 0, cooldown: 2, lines: ["How would you use a {word} if it were the only thing left?", "What would you do with a {word} if nobody else was watching?"] },
-        { id: "topic_names", topics: ["names"], priority: 0, cooldown: 2, lines: ["What do you think {word} is doing right now, at this exact moment?", "Why does {word} matter so much to you?"] },
-        { id: "topic_actions", topics: ["actions"], priority: 0, cooldown: 2, lines: ["Why do you like to {word} when you think no one can see you?", "What happens inside you, right before you {word}?"] },
-        { id: "topic_emotions", topics: ["emotions"], priority: 0, cooldown: 2, lines: ["What does it feel like when {word} takes over completely?", "Why won't you tell me exactly what makes you {word}?"] },
-        // Thematically the most important new category — a mimicry
+        { id: "topic_food", topics: ["food"], priority: 0, cooldown: 2, lines: ["A {word}? I still remember what those taste like. Do you have one every day?", "Mm, {word}. I'd almost forgotten I used to like that."] },
+        { id: "topic_tools", requiresCategory: "object.tool", priority: 0, cooldown: 2, lines: ["A {word}? I've always liked sharp, useful little things. What would you use yours for?", "Careful with a {word} around something like me."] },
+        { id: "topic_names", requiresCategory: "identity.name", priority: 0, cooldown: 2, lines: ["{word}? What a pretty name. Do you think they'd like me?", "I wonder what {word} would say about you, if I asked."] },
+        {
+            // Straight from your example — the exact shape a
+            // mirroring line should take.
+            id: "topic_animal", requiresCategory: "nature.animal", priority: 0.3, cooldown: 2,
+            lines: ["A {word}? But I love animals — don't you feel bad, sometimes?", "A {word}, hm. I've always wanted one just like that."],
+        },
+        { id: "topic_emotions", topics: ["feeling"], priority: 0, cooldown: 2, lines: ["{word}? I feel that too, sometimes — or something close to it. What brings it on for you?", "So, {word}. I didn't expect you to say that one out loud."] },
+        // Thematically the most important category — a mimicry
         // monster asking about appearance is the closest it ever gets
         // to admitting what it's actually doing.
-        { id: "topic_appearance", topics: ["appearance"], priority: 0.2, cooldown: 2, lines: ["If I looked exactly like you, right down to {word}, would you even notice?", "Tell me about your {word}. I want to get it exactly right."] },
-        { id: "topic_uncategorized", topics: ["uncategorized"], priority: -0.2, cooldown: 2, lines: ["What made you choose the word \"{word}\", out of every word you know?", "Why do you think \"{word}\" came to mind just now?"] },
+        { id: "topic_appearance", requiresCategory: "identity.appearance", priority: 0.2, cooldown: 2, lines: ["Your {word}? I've been looking for one just like that. Would you mind if I borrowed the idea?", "{word}, hm. I want to get that exactly right."] },
+        { id: "topic_unknown", topics: ["unknown"], priority: -0.2, cooldown: 2, lines: ["\"{word}\"? I don't think I've heard that one before. Say it again?", "Hm, {word}. Out of every word you know, that's the one that came out."] },
     ];
 
-    // General-purpose WH-frames — same shape no matter the word,
-    // competes with the category-specific rules above for variety.
+    // General-purpose fallback — same echo-first, Mira-reacts, then-
+    // asks shape as the category rules above, for whenever a hot
+    // topic doesn't have its own bespoke lines yet. Deliberately bare
+    // "{word}" (never "{word:gerund}") since this has to work no
+    // matter what part of speech the word actually is.
     const whFramesRule = {
         id: "wh_frames_general",
-        topics: CONTENT_TOPIC_TYPES.concat(["uncategorized"]),
+        topics: CONTENT_TOPIC_TYPES.concat(["unknown"]),
         priority: -0.1, cooldown: 1,
         lines: [
-            "Why do you think about {word:gerund} so much?",
-            "Why does {word:gerund} keep coming back to your mind?",
-            "What would happen if {word:gerund} was taken away from you forever?",
-            "What's the very worst thing that could happen because of {word:gerund}?",
-            "How did you first learn about {word:gerund}?",
-            "How would you feel if I knew everything about {word:gerund} too?",
-            "Where do you keep {word:gerund} when no one is watching?",
-            "Where would you hide {word:gerund}, if you had to hide it from me?",
-            "When did you last dream about {word:gerund}?",
-            "When was the last time {word:gerund} scared you?",
+            "A {word}? Tell me why that's the thing you'd bring up, out of everything.",
+            "{word}. I keep coming back to that word too, now that you've said it.",
+            "Why {word}, out of everything you could have told me?",
+            "{word}... I like the way that sounds coming from you. Say more.",
+            "Hm, {word}. I wasn't expecting that one — go on.",
         ],
     };
 
@@ -487,7 +497,107 @@
         },
     ];
 
-    // ---- Step 6f: the bottom rung of the fallback ladder ----
+    // ---- Step 6f: the Mira -> monster voice progression ----
+    // Gated by `voiceStage` (see Engine.js's getVoiceStage(), driven
+    // by Lexicon.js's leverage tiers via state.maxTier). Several of
+    // these have NO topic/entity requirement at all — they're meant
+    // to surface as the monster's own spontaneous remarks in that
+    // stage's voice, not reactions to something specific the player
+    // said, so they only win when nothing more specific matched this
+    // turn (their `priority` sits just above the selection threshold
+    // for exactly that reason). Minigame-shaped ones (the number
+    // game, the memory quiz) are pure flavor for now — nothing
+    // validates a guess or checks recall yet; that's real future
+    // minigame work, this is just the voice.
+    const voiceProgressionRules = [
+        // ---- mira: cheerful, curious, harmless-sounding ----
+        {
+            id: "mira_flowers", voiceStage: "mira", priority: 1.3, cooldown: 5,
+            // No dynamic "{word}" in this line, so the conversation-
+            // thread mechanism in Engine.js (see isFollowUp()/
+            // updateThread()) is told what this is "about" explicitly
+            // — that's what lets a low-content follow-up like "oh
+            // really, what is it?" correctly continue talking about
+            // the flower instead of falling through to an unrelated
+            // memory callback.
+            topicHint: "flower",
+            lines: ["I really like flowers, I think I have one, you would love it!"],
+        },
+        {
+            // A dedicated follow-up for mira_flowers specifically —
+            // see Engine.js's select(), which looks for a rule whose
+            // `followUpFor` matches the active thread. `once` on
+            // purpose: after the reveal, later follow-ups in the same
+            // thread fall through to the generic continuation instead
+            // of repeating this exact line.
+            id: "mira_flowers_reveal", followUpFor: "mira_flowers", once: true, priority: 1,
+            lines: ["A foxglove! Isn't it pretty? I could bring it for you, if you'd like."],
+        },
+        {
+            id: "mira_spiders", voiceStage: "mira", requiresEntity: "spider", priority: 0.5, cooldown: 4,
+            lines: ["Ahh, the spiders really scare me! Are you afraid too?"],
+            followups: ["I'm sure if I dangle one in front of you, you will scream!"],
+        },
+        {
+            id: "mira_running", voiceStage: "mira", topics: ["movement"], priority: 0.3, cooldown: 4,
+            lines: ["I'm a good runner! Do you think you could outrun me?"],
+        },
+
+        // ---- transition: warmth with an edge starting to show ----
+        {
+            id: "transition_number_game", voiceStage: "transition", priority: 1.3, cooldown: 6,
+            lines: ["Let's play a game! Think of a number and I'll try to guess it… but if I'm right, you'll have to give me something. Something that I like…"],
+        },
+        {
+            id: "transition_pretty_rock", voiceStage: "transition", requiresEntity: "rock", priority: 0.5, cooldown: 4,
+            lines: ["Could you hand me that pretty rock, please?"],
+        },
+        {
+            id: "transition_suits_dresses", voiceStage: "transition", requiresCategory: "object.clothing", priority: 0.5, cooldown: 4,
+            lines: ["Do you like suits? Or dresses? Because I really like what you have…"],
+        },
+
+        // ---- monster: it has stopped bothering to fully perform Mira ----
+        {
+            id: "monster_hearts_livers", voiceStage: "monster", priority: 1.35, cooldown: 6,
+            lines: ["Do you like hearts or livers?"],
+        },
+        {
+            id: "monster_rip_mouth_off", voiceStage: "monster", intents: ["joking"], priority: 0.6, cooldown: 5,
+            lines: ["Hahaha, you are so funny, I would rip your mouth off!"],
+        },
+        {
+            id: "monster_hide_from_me", voiceStage: "monster", priority: 1.25, cooldown: 6,
+            lines: ["Do you think you can really hide from me?"],
+        },
+        {
+            id: "monster_memory_leg", voiceStage: "monster", priority: 1.15, cooldown: 8,
+            lines: ["What do you remember I told you?… If you remember wrong, I will have to take your leg!"],
+        },
+    ];
+
+    // ---- Step 6f: the monster's OWN vocabulary ----
+    // Every word here already exists somewhere in Lexicon.js's atlas
+    // (a few — liver, foxglove, bones, eyeballs, blood, scary,
+    // chicken, pet, ball, old, wrinkly, nails, torso — were added to
+    // it specifically to cover this list). The point: the monster
+    // shouldn't need the player to have said ANYTHING yet before it
+    // can ask a real, specific-sounding question — especially at the
+    // very start of a conversation, when the player's own topic
+    // stack is still empty. See Engine.js's respond(): whenever
+    // there's nothing real to talk about, it picks one of these,
+    // resolves its category the same way a player's word would, and
+    // asks about IT instead — same rules, same mirroring style, just
+    // a self-supplied topic instead of a borrowed one.
+    const monsterVocabulary = [
+        "heart", "liver", "hair", "sad", "happy", "fast", "flower", "foxglove",
+        "candy", "pumpkin", "skin", "bones", "eyes", "eyeballs", "blood", "dress",
+        "cute", "scary", "hungry", "chicken", "pet", "snake", "snow", "ball",
+        "old", "young", "wrinkly", "straight", "yellow", "green", "white", "gold",
+        "silver", "hand", "nails", "leg", "torso",
+    ];
+
+    // ---- Step 6g: the bottom rung of the fallback ladder ----
     // Standalone in-character lines, used only when nothing else
     // scored and there's no debt or memory to fall back on first.
     const fallbackDeflections = [
@@ -513,7 +623,6 @@
     // -------- Make it available to Engine.js --------
     window.MonsterContent = {
         persona: persona,
-        categorize: categorize,
         fixedPronouns: fixedPronouns,
         dynamicPronouns: dynamicPronouns,
         tagToneMap: tagToneMap,
@@ -523,8 +632,9 @@
         moodNudges: moodNudges,
         importantIntents: importantIntents,
         slots: slots,
-        rules: introRules.concat(tagReactionRules, phraseIntentRules, addressRules, categoryRules, [whFramesRule], trustRules),
+        rules: introRules.concat(tagReactionRules, phraseIntentRules, addressRules, categoryRules, [whFramesRule], trustRules, voiceProgressionRules),
         fallbackDeflections: fallbackDeflections,
+        monsterVocabulary: monsterVocabulary,
         vocabulary: vocabulary,
         starters: starters,
     };
@@ -534,15 +644,42 @@
 // =============================================================
 // TODO — still not wired into a live rule
 // -------------------------------------------------------------
-// [ ] `vocabulary` — words the monster could use to describe ITSELF
-//     (appearance/experience/lore) aren't assembled into any line yet.
+// [x] Voice progression — Mira -> transition -> monster is live,
+//     driven by Lexicon.js's leverage tiers via state.maxTier (see
+//     `voiceProgressionRules` and Engine.js's getVoiceStage()).
+// [x] `monsterVocabulary` — wired into Engine.js's
+//     ensureTopicToTalkAbout(): whenever the topic stack is empty
+//     (most commonly right at the start of a conversation), the
+//     monster picks one of its own words instead of coming up empty.
+// [ ] `vocabulary` (the OLDER appearance/experience/lore pool, not
+//     `monsterVocabulary` above) — words the monster could use to
+//     describe ITSELF still aren't assembled into any line yet.
+//     Could also now pull flavor words per voice stage (soft/warm
+//     words early, "borrowed"/"hollow"/"hunger" once in monster
+//     stage) instead of being one flat unused pool.
 // [ ] `starters` — food/experiences/appearances/lore icebreakers
 //     aren't used; the game still always opens with the two fixed
 //     questions in Engine.js's greet().
-// [ ] Only one rule (`monster_trusted_reveal`) is gated on trust so
-//     far — there's room for a whole ladder of bolder lines that
-//     unlock as trust rises, tying into `mood` too.
+// [ ] `monster_trusted_reveal` is still the only TRUST-gated rule
+//     (separate axis from voiceStage/tier) — there's room for a
+//     whole ladder of bolder lines gated on trust too.
+// [ ] The minigame-shaped voice-progression lines (the number game,
+//     the memory-quiz leg-threat) are flavor only right now — no
+//     actual guess validation or recall-checking exists yet. That's
+//     explicitly future minigame work, not an oversight.
 // [ ] Expand every list above with more words/lines whenever there's
 //     time — these are enough to prove the shape works, not the
 //     ceiling of what the monster can say.
+// [ ] The "manner" self-check — is this line aggressive, direct, shy,
+//     threatening? Is it about the monster, the player, someone else,
+//     or a memory? — is still NOT built. This is the "conversational
+//     act" axis the Word Category Atlas artifact described (Opening/
+//     Asking/Telling/Hostile/Binding/etc.), separate from both the
+//     category axis (Lexicon.js) and the leverage-tier axis
+//     (state.maxTier). Right now the closest things to it are the
+//     tag/phrase intents (threat, accusedOfMeanness, address_monster,
+//     etc.) — real signals, but ad hoc, not a systematic per-line
+//     check. Descriptor referent-linking (Engine.js's
+//     isDescriptor()/isDescribable(), "{word} what?" in select()) is
+//     a first, narrow step in this direction, not the whole thing.
 // =============================================================

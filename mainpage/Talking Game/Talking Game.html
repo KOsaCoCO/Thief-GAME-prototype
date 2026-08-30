@@ -46,14 +46,18 @@
         <p><span class="debug-label">Facts:</span> <span id="debug-facts">—</span></p>
         <p><span class="debug-label">Debts:</span> <span id="debug-debts">—</span></p>
         <p><span class="debug-label">Learned words:</span> <span id="debug-learned">—</span></p>
+        <p><span class="debug-label">Voice stage:</span> <span id="debug-voice-stage">mira</span>
+           &nbsp;&nbsp;<span class="debug-label">Max tier:</span> <span id="debug-max-tier">0</span></p>
     </div>
 
-    <!-- Load order: the generic pipeline (Engine.js) and the content
-         it runs (Monster Content.js) can load in either order, since
-         nothing calls into either until the page has fully loaded —
-         but Word Correction.js has to exist before Engine.js's render
-         stage might reach for it. Talking Game.js (the page
-         controller) always loads last. -->
+    <!-- Load order: Lexicon.js MUST come before Monster Content.js —
+         unlike everything else here, Monster Content.js reads
+         window.Lexicon.FAMILIES immediately while it's loading, not
+         later at runtime, so it has to already exist. Word
+         Correction.js has to exist before Engine.js's render stage
+         might reach for it. Talking Game.js (the page controller)
+         always loads last. -->
+    <script src="Lexicon.js"></script>
     <script src="Word Correction.js"></script>
     <script src="Monster Content.js"></script>
     <script src="Engine.js"></script>

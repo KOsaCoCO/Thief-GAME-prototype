@@ -19,10 +19,10 @@
 // temporary spelling to use in one sentence, one time.
 //
 // This is a simple lookup table, not a real grammar engine — it only
-// knows how to conjugate the action words already listed in Dialogue
-// Brain.js's CATEGORY_WORDS.actions list. Any word not in the table
-// below (nouns, names, emotions, or any word we've simply never
-// added yet) is returned completely unchanged — safe, no guessing.
+// knows how to conjugate a handful of common verbs. Any word not in
+// the table below (nouns, names, emotions, or any verb we've simply
+// never added yet) is returned completely unchanged — safe, no
+// guessing.
 // =============================================================
 
 (function () {
