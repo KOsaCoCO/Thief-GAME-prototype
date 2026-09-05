@@ -40,10 +40,9 @@
 //
 //   IDLE NUDGE (repeating): if the player goes 1.5s inside an active
 //     session without placing or attempting an attack, GameAI.onPlayCardIdle()
-//     fires (this file just owns the timer). The monster may play a
-//     card of its own onto the field and offer a hotkey (E) that lets
-//     the player jump straight into a tug-of-war for it — Start Game
-//     TugOfWar.js owns that badge/input.
+//     fires (this file just owns the timer). The monster plays a card
+//     of its own onto the field, which the player can then attack the
+//     normal suit-hierarchy way.
 //
 //   END BATTLE:
 //     - Player clicks "End Battle" or presses Escape.

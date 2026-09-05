@@ -8,7 +8,7 @@
 //
 // Two families of visuals live here:
 //   - playBeatSequence(): the "monster beats a placed card" stack/
-//     hold/fly sequence (contested by Start Game TugOfWar.js).
+//     hold/fly sequence.
 //   - showFlashyText()/flyCardToElement()/jumpSlot(): smaller pieces
 //     used by AI_brain.js's idleGamble() to show what the monster's
 //     free idle-timeout gamble is doing.
@@ -22,17 +22,14 @@
     "use strict";
 
     // Runs the "monster beats a field card" sequence: the attacker card
-    // slides up onto the target (stack), the attacker glows briefly (hold —
-    // the target's own "contested" wiggle/glow is Start Game.css's
-    // .contested class, toggled by AI_brain.js), then both fly off to the
-    // monster box (fly). ~2 seconds total. Calls onComplete afterward —
-    // AI_brain.js does the actual state changes (removing the elements,
-    // returning both cards to hand) there.
+    // slides up onto the target (stack), the attacker glows briefly (hold),
+    // then both fly off to the monster box (fly). ~2 seconds total. Calls
+    // onComplete afterward — AI_brain.js does the actual state changes
+    // (removing the elements, returning both cards to hand) there.
     //
-    // Returns a handle with cancel() — Start Game TugOfWar.js calls it when
-    // the player contests the target mid-sequence, so the stack/hold/fly
-    // steps don't keep firing (and calling onComplete) underneath the
-    // tug-of-war UI once the outcome is being decided some other way.
+    // Returns a handle with cancel(), kept as a safety valve in case a
+    // future caller ever needs to abort the sequence mid-flight; nothing
+    // currently calls it.
     const STACK_MS = 350;
     const HOLD_MS  = 650;
     const FLY_MS   = 1000;

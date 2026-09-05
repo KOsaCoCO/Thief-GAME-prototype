@@ -183,19 +183,18 @@
     //   - If nothing can beat it: the monster gives up one of its own
     //     cards straight into the player's hand (not the field).
     //
-    // While the beat is in progress, the target is "contested" (see
-    // claimContest/resolveContest below) — Start Game TugOfWar.js lets
-    // the player click it to fight for the card instead of losing it
-    // automatically once the animation finishes.
+    // While the beat's stack/hold/fly animation plays out, the target is
+    // tracked as the "active contest" below so a second placement can't
+    // overwrite it mid-animation — it always resolves in the monster's
+    // favor once the animation finishes.
     function onPlayerPlacedCard(placedCardId) {
         if (!window.GameActions || !window.GamePlay || typeof getShapeForCard !== "function") return;
 
         // A previous placement's monster reaction is still unresolved
-        // (auto-animating or an active tug-of-war). Starting a second one
-        // now would overwrite activeContest and orphan the first — the
-        // first card's eventual resolution would then wrongly apply to
-        // the second contest's card. Skip reacting to this placement
-        // until the first one settles.
+        // (mid beat-animation). Starting a second one now would overwrite
+        // activeContest and orphan the first — the first card's eventual
+        // resolution would then wrongly apply to the second card. Skip
+        // reacting to this placement until the first one settles.
         if (activeContest) return;
 
         const monsterHand = GameActions.getMonsterHand();
@@ -235,16 +234,15 @@
         GameActions.showPopup(`Monster can't beat your card — it gives up card #${cardId} to you.`);
     }
 
-    // The field card currently being contested (at most one at a time —
+    // The field card currently being beaten (at most one at a time —
     // matches the rest of this file's one-thing-happens-at-a-time model).
-    // Set in beatFieldCard(), read/cleared by claimContest()/resolveContest().
+    // Set in beatFieldCard(), read/cleared by resolveContest().
     let activeContest = null;
 
     // Beats one of the player's field cards: places the winning monster
-    // card on the field, tags the target "contested" (see claimContest()
-    // below), then runs the stack/hold/fly animation. If nothing claims
-    // it first, autoResolve() runs once the animation finishes and both
-    // cards join the monster's hand — the normal, uncontested outcome.
+    // card on the field, then runs the stack/hold/fly animation. Once the
+    // animation finishes, resolveContest() runs and both cards join the
+    // monster's hand.
     function beatFieldCard({ monCardId, target, targetId }) {
         // Pull the attacker out of the monster's hand/box — it's about to
         // appear on the field.
@@ -256,13 +254,12 @@
             `.monster-field .card[data-owner='monster'][data-card-id="${monCardId}"]`
         );
 
-        target.classList.add("contested");
         activeContest = { monCardId, attackerEl, target, targetId, resolved: false, anim: null };
 
         const autoResolve = () => {
-            if (!activeContest || activeContest.resolved) return;   // already claimed by a tug-of-war
+            if (!activeContest || activeContest.resolved) return;
             activeContest.resolved = true;
-            resolveContest("monster");
+            resolveContest();
         };
 
         if (attackerEl && window.GameAIAnimations && typeof GameAIAnimations.playBeatSequence === "function") {
@@ -272,63 +269,24 @@
         }
     }
 
-    // Called by Start Game TugOfWar.js when the player clicks a
-    // ".contested" card. Cancels the pending automatic capture and hands
-    // the contest's details back so the tug-of-war can run. Returns null
-    // if there's nothing to claim (stale click, already resolved, etc.).
-    function claimContest(cardEl) {
-        if (!activeContest || activeContest.resolved || activeContest.target !== cardEl) return null;
-        // Safeguard: the element the player clicked must still carry the
-        // exact card ID this contest was created for. Combined with the
-        // onPlayerPlacedCard() re-entry guard above, this should never
-        // actually fail — it's the last line of defense against ever
-        // handing back a different card than the one the player clicked.
-        if (Number(cardEl.dataset.cardId) !== activeContest.targetId) return null;
-        activeContest.resolved  = true;
-        activeContest.wasClaimed = true;   // so resolveContest() knows this went through a tug-of-war
-        if (activeContest.anim && typeof activeContest.anim.cancel === "function") {
-            activeContest.anim.cancel();
-        }
-        return {
-            monCardId:  activeContest.monCardId,
-            attackerEl: activeContest.attackerEl,
-            target:     activeContest.target,
-            targetId:   activeContest.targetId,
-        };
-    }
-
-    // Settles the current contest. winner is "player" (the tug-of-war was
-    // won, or the card just resolved uncontested — see below) or "monster".
-    //   - "player":  the target returns to the player's hand; the
-    //                monster's attacking card retreats to its own hand.
-    //   - "monster": both cards join the monster's hand (the normal
-    //                uncontested outcome, or a tug-of-war the monster won).
-    function resolveContest(winner) {
+    // Settles the current contest once the beat animation finishes: both
+    // cards join the monster's hand.
+    function resolveContest() {
         if (!activeContest) return;
-        const { monCardId, attackerEl, target, targetId, wasClaimed } = activeContest;
+        const { monCardId, attackerEl, target, targetId } = activeContest;
         activeContest = null;
 
         if (target && target.isConnected) target.remove();
         if (attackerEl && attackerEl.isConnected) attackerEl.remove();
 
-        if (winner === "player") {
-            // Only reachable via a won tug-of-war — the automatic path
-            // always resolves "monster".
-            GameActions.addCardToPlayerHand(targetId);
-            GameActions.addToMonsterHand(monCardId);
-            GameActions.showPopup(`You pulled card #${targetId} back into your hand!`);
-        } else {
-            GameActions.addToMonsterHand(monCardId);
-            GameActions.addToMonsterHand(targetId);
-            if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
-                GameTurnTimer.resetPlayerCounter();
-            }
-            GameActions.showPopup(
-                wasClaimed
-                    ? `Monster won the tug-of-war and took both #${monCardId} and #${targetId}.`
-                    : `Monster beat your card #${targetId} with #${monCardId}\nand took both back into its hand.`
-            );
+        GameActions.addToMonsterHand(monCardId);
+        GameActions.addToMonsterHand(targetId);
+        if (window.GameTurnTimer && typeof GameTurnTimer.resetPlayerCounter === "function") {
+            GameTurnTimer.resetPlayerCounter();
         }
+        GameActions.showPopup(
+            `Monster beat your card #${targetId} with #${monCardId}\nand took both back into its hand.`
+        );
 
         if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
             GameBonusAction.update();
@@ -518,13 +476,12 @@
     // this exactly once, when the session starts), the monster has a
     // small chance to grab a player-owned field card outright while
     // the player's still deciding what to do. No suit check, and this
-    // can't be contested — the tug-of-war mechanic is unrelated and
-    // only ever applies to the "beat a placed card" flow above.
+    // is unrelated to the "beat a placed card" flow above.
     //
-    // Telegraphed before it happens (not tug-of-war-able, but still
-    // visible coming): the monster sprite buzzes, then a flashy line
-    // announces it, THEN — only after both — the card actually leaves
-    // the field. Visuals live in Start Game AI_brain Animations.js.
+    // Telegraphed before it happens (still visible coming): the monster
+    // sprite buzzes, then a flashy line announces it, THEN — only after
+    // both — the card actually leaves the field. Visuals live in Start
+    // Game AI_brain Animations.js.
     const BATTLE_SNATCH_CHANCE      = 0.15;
     const BATTLE_SNATCH_VIBRATE_MS  = 500;
     const BATTLE_SNATCH_ANNOUNCE_MS = 1500;
@@ -578,33 +535,27 @@
     // -------- Play-card session: idle nudge (repeating) --------
     // Called by Start Game PlayCard.js every time the player goes 1.5s
     // inside an active Play Card session without placing a card or
-    // attempting an attack. Unlike tryBattleSnatch() above, this
-    // repeats for as long as the player stays idle. The monster plays
-    // one of its own cards onto the field, and the player gets a
-    // hotkey (E) offer to immediately start a tug-of-war for it instead
-    // of having to arm a card and beat it the normal suit-hierarchy
-    // way. Visuals/input for the hotkey itself live in Start Game
-    // TugOfWar.js; this file only decides the card and the outcome.
+    // attempting an attack. Unlike tryBattleSnatch() above, this repeats
+    // for as long as the player stays idle. The monster simply plays one
+    // of its own cards onto the field — the player can then attack it
+    // the normal suit-hierarchy way.
 
-    // The field card currently on offer via the hotkey (at most one at
-    // a time — a fresh idle nudge won't fire again while one is still
-    // unclaimed). null once resolved (hotkey pressed, or the card was
-    // taken some other way and TugOfWar.js noticed and cleared its offer).
-    let hotkeyCard = null;
+    // The field card most recently placed by an idle nudge (at most one
+    // at a time — a fresh idle nudge won't fire again while it's still
+    // sitting unclaimed on the field). null once it's been taken.
+    let idleNudgeCard = null;
 
     function onPlayCardIdle() {
         if (!window.GameActions || !window.GamePlay) return;
         if (typeof GamePlay.isActive !== "function" || !GamePlay.isActive()) return;
 
-        // A previous offer is still live — don't stack a second one. But
-        // if that card left the field some other way (a normal suit-
-        // hierarchy attack, not the hotkey), this is the only place
-        // that would notice — TugOfWar.js clears its OWN badge/offer
-        // when that happens, but has no way to tell this file. Treat a
-        // detached cardEl as stale and clear it so nudges can resume.
-        if (hotkeyCard) {
-            if (hotkeyCard.cardEl && hotkeyCard.cardEl.isConnected) return;
-            hotkeyCard = null;
+        // A previous nudge card is still on the field — don't stack a
+        // second one. If it left the field some other way (a normal
+        // suit-hierarchy attack), treat a detached cardEl as stale and
+        // clear it so nudges can resume.
+        if (idleNudgeCard) {
+            if (idleNudgeCard.cardEl && idleNudgeCard.cardEl.isConnected) return;
+            idleNudgeCard = null;
         }
 
         const monsterHand = GameActions.getMonsterHand();
@@ -620,46 +571,9 @@
         );
         if (!cardEl) return;   // shouldn't happen, but stay defensive
 
-        hotkeyCard = { cardId, cardEl };
-        GameActions.showPopup(`Monster played card #${cardId} on the field — press E to fight for it!`);
+        idleNudgeCard = { cardId, cardEl };
         refreshIfBattleActive();
-
-        if (window.GameTugOfWar && typeof GameTugOfWar.offerHotkey === "function") {
-            GameTugOfWar.offerHotkey(cardEl);
-        }
-    }
-
-    // Called by Start Game TugOfWar.js when the player presses the
-    // hotkey. Returns a truthy value to confirm the offer is still
-    // valid (TugOfWar.js only starts the tug-of-war if this doesn't
-    // return null/undefined).
-    function claimHotkeyCard(cardEl) {
-        if (!hotkeyCard || hotkeyCard.cardEl !== cardEl) return null;
-        return true;
-    }
-
-    // Settles the hotkey-offered tug-of-war. Unlike resolveContest()
-    // above, there's only ever one card in play here — no separate
-    // attacker to hand back to the monster.
-    function resolveHotkeyCard(winner) {
-        if (!hotkeyCard) return;
-        const { cardId, cardEl } = hotkeyCard;
-        hotkeyCard = null;
-
-        if (cardEl && cardEl.isConnected) cardEl.remove();
-
-        if (winner === "player") {
-            GameActions.addCardToPlayerHand(cardId);
-            GameActions.showPopup(`You pulled card #${cardId} away from the monster!`);
-        } else {
-            GameActions.addToMonsterHand(cardId);
-            GameActions.showPopup(`Monster kept hold of card #${cardId}.`);
-        }
-
-        if (window.GameBonusAction && typeof GameBonusAction.update === "function") {
-            GameBonusAction.update();
-        }
-        refreshIfBattleActive();
+        GameActions.showPopup(`Monster played card #${cardId} on the field.`);
     }
 
     // -------- Public API --------
@@ -672,12 +586,6 @@
         idleGamble,           // idleGamble(onDone?) — onDone fires once fully resolved
         tryBattleSnatch,       // called once per Play Card session by PlayCard.js
         onPlayCardIdle,        // called by PlayCard.js every 1.5s of in-session inactivity
-        // Used by Start Game TugOfWar.js to hijack a contested card.
-        claimContest,
-        resolveContest,
-        // Used by Start Game TugOfWar.js for the hotkey-offered card.
-        claimHotkeyCard,
-        resolveHotkeyCard,
     };
 
 })();

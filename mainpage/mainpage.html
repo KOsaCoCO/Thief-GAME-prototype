@@ -10,16 +10,15 @@
     <main class="container">
         <h1 id="greeting">Hello</h1>
 
-        <!-- GAME REMODEL: Talking Game is now the main focus, so it's
-             the only button left here. The old card-game buttons
-             (Start Game / Game Rules / Card Info / Settings) are
-             archived, not deleted — their pages, scripts, and the
-             route entries in mainpage.js's PAGES map are all still
-             sitting in their own folders untouched. Once development
-             comes back around to the card game, just add their
-             <button> lines back here. -->
+        <!-- GAME REMODEL: Talking Game is the main focus now, but the
+             old card game (Start Game) is being tested again here
+             alongside it — its route was already sitting untouched in
+             mainpage.js's PAGES map. Game Rules / Card Info / Settings
+             stay archived for now; add their <button> lines back the
+             same way whenever they're needed too. -->
         <nav class="menu">
             <button class="menu-btn" data-action="talking">Talking Game</button>
+            <button class="menu-btn" data-action="start">Start Game</button>
             <!-- Clears the Talking Game's saved localStorage state
                  (Engine.js's "talkingGameEngineState" key) so the
                  monster forgets everything and starts as a stranger

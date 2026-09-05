@@ -82,11 +82,11 @@
     // -------- Public start/stop --------
     //
     // start() is gated only by body-class flags set by full-screen modes
-    // (playcard-mode, bonus-mode, special-battle-mode, tug-mode,
-    // setup-mode). Each mode adds its own class on entry and strips it
-    // on exit — reading directly from the class list means we can't
-    // wedge on a stale JS isActive() flag the way the old
-    // GameBonusAction.isActive() check could.
+    // (playcard-mode, bonus-mode, special-battle-mode, setup-mode). Each
+    // mode adds its own class on entry and strips it on exit — reading
+    // directly from the class list means we can't wedge on a stale JS
+    // isActive() flag the way the old GameBonusAction.isActive() check
+    // could.
     //
     // An optional opts arg is accepted (legacy { force: true } from older
     // call sites) but ignored.
@@ -102,7 +102,6 @@
         if (cls.contains("playcard-mode"))      return;
         if (cls.contains("bonus-mode"))         return;
         if (cls.contains("special-battle-mode")) return;
-        if (cls.contains("tug-mode"))            return;
         if (cls.contains("setup-mode"))          return;
 
         if (checkMonsterDefeat()) return; // just check now in case we missed it
